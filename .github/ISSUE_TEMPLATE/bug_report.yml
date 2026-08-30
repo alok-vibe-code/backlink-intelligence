@@ -1,0 +1,32 @@
+name: Bug report
+description: Report incorrect behavior or an unexpected failure.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for helping improve Backlink Intelligence. Do not include secrets or confidential client data.
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the observed behavior and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      description: Provide the smallest reproducible example. Redact sensitive URLs/data if needed.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: e.g. 0.1.0
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      placeholder: e.g. 3.12
