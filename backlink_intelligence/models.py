@@ -105,6 +105,8 @@ class PlacementSuggestion:
     paragraph_index: int
     score: float
     context_level: str
+    destination_score: float
+    destination_fit: str
     requested_anchor: str
     suggested_anchor: str
     strategy: str

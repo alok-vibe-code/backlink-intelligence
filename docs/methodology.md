@@ -38,9 +38,9 @@ The recommendation is intentionally explainable and reversible by a human review
 
 ## 6. Contextual placement
 
-Paragraphs are ranked by similarity to the target page with a smaller anchor-term overlap component. Very short and extremely long paragraphs are excluded from candidate generation.
+Paragraphs are ranked using target-page similarity, destination-specific intent, and a smaller anchor-term overlap component. Destination intent emphasizes terms that distinguish the target from the requested anchor, helping a cost/pricing paragraph outrank a generic paragraph that only mentions the entity. Very short and extremely long paragraphs are excluded from candidate generation.
 
-Before/After output prioritizes preservation of publisher text. If the anchor already appears naturally, only that phrase is linked. Otherwise a conservative contextual sentence is appended.
+Before/After output prioritizes preservation of publisher text. Anchor matching requires complete word boundaries, preserves the capitalization already present in publisher copy, and may conservatively use an existing singular/plural grammatical form rather than creating partial-link artifacts. If no natural source phrase is available, a conservative contextual sentence is appended.
 
 ## 7. Monitoring
 

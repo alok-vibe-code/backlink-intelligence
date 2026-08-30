@@ -2,6 +2,16 @@
 
 All notable changes to Backlink Intelligence are documented here.
 
+## 1.0.1 - 2026-08-30
+
+### Fixed
+
+- Prevented partial anchor insertion inside larger word forms such as rendering `AI agents` as `[AI Agent]s`.
+- Preserved the publisher's existing anchor capitalization when the requested keyword differs only by case.
+- Added conservative singular/plural anchor adaptation when the natural grammatical form already exists in source copy.
+- Added destination-intent scoring so context specific to the destination topic receives more weight than generic anchor repetition.
+- Added destination-fit and actual placed-anchor details to placement CLI output.
+
 ## 1.0.0 - 2026-08-30
 
 ### Added
