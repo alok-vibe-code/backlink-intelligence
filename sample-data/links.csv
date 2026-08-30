@@ -1,0 +1,2 @@
+source_url,target_url,expected_anchor
+https://example.com/source-article,https://example.org/target-page,example resource

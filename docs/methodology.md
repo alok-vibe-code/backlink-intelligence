@@ -1,93 +1,51 @@
 # Methodology
 
-Backlink Intelligence is designed around one principle:
+Backlink Intelligence follows an evidence-first methodology. It does not infer a proprietary search-engine score.
 
-> **Evaluate observable link evidence and editorial context instead of treating a single third-party authority metric as the final decision.**
+## 1. Source accessibility and indexability
 
-## What the project evaluates
+The tool records response status, final URL, canonical URL, and robots directives. These are observable technical signals.
 
-The methodology is organized around five evidence groups.
+## 2. Link evidence
 
-### 1. Source-page evidence
+For an existing backlink it records:
 
-Examples include:
+- whether the target URL is present,
+- anchor text,
+- `rel` attributes,
+- surrounding paragraph/context,
+- broad placement classification.
 
-- HTTP availability and redirects
-- title, H1, and main content
-- canonical and robots directives
-- approximate content depth
-- external-link counts and unique external domains
-- outbound-link density and neighborhood
+## 3. Relevance
 
-### 2. Link evidence
+The deterministic v1 engine compares source and destination using term-frequency cosine similarity plus normalized term overlap. It reports separate page, title/H1, heading, and contextual similarities.
 
-Examples include:
+These similarity values are workflow evidence, not ranking probabilities.
 
-- whether the target link exists
-- anchor text
-- link type and attributes
-- surrounding sentence and paragraph
-- approximate location within the document
-- whether the link appears to be inside editorial main content
+## 4. Outbound-link behavior
 
-### 3. Relevance evidence
+The tool measures external links, unique external domains, link density, and rel-attribute distributions. High-density patterns are review flags, not a "toxic link" verdict.
 
-Relevance is intended to be measured at several levels rather than as one binary label:
+## 5. Prospect qualification
 
-- broader site/domain topic signals
-- source page ↔ destination page
-- local link context ↔ destination page
+The qualifier combines availability, indexability, relevance, placement potential, and review flags into one of three operational recommendations:
 
-Initial implementations should prefer explainable local methods. More advanced semantic models may be added as optional components later.
+- prioritize
+- manual review
+- low priority
 
-### 4. Editorial-fit evidence
+The recommendation is intentionally explainable and reversible by a human reviewer.
 
-For proposed link placements, the tool should examine:
+## 6. Contextual placement
 
-- whether the target genuinely expands the source discussion
-- whether the preferred anchor is grammatically and semantically natural
-- how much original publisher text would need to change
-- whether a new sentence is more appropriate than forced insertion
-- whether the candidate paragraph should be rejected entirely
+Paragraphs are ranked by similarity to the target page with a smaller anchor-term overlap component. Very short and extremely long paragraphs are excluded from candidate generation.
 
-### 5. Lifecycle evidence
+Before/After output prioritizes preservation of publisher text. If the anchor already appears naturally, only that phrase is linked. Otherwise a conservative contextual sentence is appended.
 
-After a backlink is acquired, monitoring may examine:
+## 7. Monitoring
 
-- continued link presence
-- anchor changes
-- `rel` changes
-- target changes
-- source/target redirects
-- HTTP availability
-- canonical/noindex changes
-- material placement changes
+A monitoring baseline captures the observable state of a link. Future checks compare link existence, anchor, rel attributes, placement, source/target status, canonical, and robots directives.
 
-## Recommendation model
+## Human review
 
-The project should expose dimensions such as:
-
-- relevance,
-- editorial fit,
-- risk/review signals,
-- confidence,
-- and recommendation.
-
-A future recommendation such as **Prioritize** should always include the reasons that support it and the concerns that might require human review.
-
-## What the methodology does not claim
-
-Backlink Intelligence does not claim to:
-
-- know how Google values a specific backlink,
-- reproduce PageRank or search-engine ranking systems,
-- determine whether a site is "toxic" from a proprietary formula,
-- guarantee rankings,
-- guarantee penalties,
-- or replace professional review.
-
-## Background article
-
-The conceptual motivation is discussed in:
-
-[Backlink Quality Beyond DA & DR](https://alokblog.com/backlink-quality-beyond-da-dr/)
+All outputs are aids for SEO and editorial review. The tool does not automatically alter external pages, send outreach, purchase links, or publish placements.

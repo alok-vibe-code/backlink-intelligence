@@ -2,243 +2,332 @@
 
 **Open-source backlink intelligence based on evidence, context, and editorial fit.**
 
-Backlink Intelligence is a local-first, open-source SEO toolkit for evaluating backlink opportunities without reducing link quality to a single authority metric.
+Backlink Intelligence is a local-first Python toolkit for SEO professionals who want to evaluate backlink opportunities beyond a single domain-level authority metric.
 
-The project is designed around a practical workflow:
+It covers the complete working cycle:
 
-**Discover → Qualify → Place → Monitor**
+**Qualify → Audit → Place → Monitor → Analyze**
 
-It will help SEO professionals inspect page-level evidence, evaluate topical and contextual relevance, identify natural link-placement opportunities, generate transparent Before/After placement recommendations, and monitor acquired links for later changes.
+The core tool works without paid SEO APIs or paid AI APIs.
 
-> **Project status:** Foundation / pre-alpha. The repository architecture and methodology are live. Functional backlink auditing begins with `v0.1.0`.
+## What it does
+
+| Command | Purpose | Status |
+| --- | --- | --- |
+| `audit` | Inspect an existing backlink and its page-level evidence | ✅ Available |
+| `qualify` | Evaluate backlink prospects from CSV | ✅ Available |
+| `place` | Find contextual placement opportunities and produce Before/After suggestions | ✅ Available |
+| `monitor` | Detect changes to acquired backlinks over time | ✅ Available |
+| `portfolio` | Review anchor, destination, and placement distributions | ✅ Available |
 
 ## Why this project exists
 
-Domain-level metrics can be useful inputs, but they do not explain the full context of an individual backlink opportunity. A link also has a source page, a destination, an anchor, a surrounding paragraph, a placement type, link attributes, crawl/indexability signals, and an outbound-link neighborhood.
+DA, DR, and similar third-party metrics can be useful inputs, but they do not describe the full quality of an individual link placement.
 
-Backlink Intelligence is being built to surface that evidence directly.
+A backlink also has:
 
-The project does **not** attempt to reproduce Google's ranking systems, label a link as objectively "good" or "bad," or claim that any individual signal determines search performance.
+- a source page and destination page,
+- topical and contextual alignment,
+- an anchor,
+- a surrounding paragraph,
+- a placement type,
+- link attributes,
+- crawl/indexability evidence,
+- and an outbound-link neighborhood.
 
-Instead, it aims to answer questions such as:
+Backlink Intelligence surfaces those observable signals so an SEO can make a more informed decision.
 
-- Is the source page topically aligned with the destination?
-- Does the target page genuinely expand the surrounding discussion?
-- Where does the backlink appear on the page?
-- Is the anchor natural in context?
-- Does the source page show unusual outbound-link patterns that deserve review?
-- Where could a target link fit naturally in an existing article?
-- How much editorial rewriting would that placement require?
-- Did an acquired backlink later disappear or change?
+It does **not** claim to reproduce Google's ranking systems, predict penalties, or provide a universal "Google backlink score."
 
-## Core workflow
+## Installation
 
-| Stage | Question | Planned capabilities |
-| --- | --- | --- |
-| **Discover** | Which pages deserve attention? | Bulk prospect input and future discovery helpers |
-| **Qualify** | Is this opportunity worth pursuing? | Relevance, destination fit, source-page evidence, outbound-link analysis, review flags |
-| **Place** | Where can the link naturally fit? | Paragraph ranking, anchor analysis, contextual placement, Before/After recommendations |
-| **Monitor** | Did the placement remain intact? | Link existence, anchor/attribute changes, redirects, indexability changes, historical snapshots |
+Python 3.11+ is required.
 
-## Signature feature: contextual placement recommendations
+```bash
+python -m pip install .
+```
 
-The planned placement engine accepts:
+For development:
 
-- a source article URL,
-- a target URL, and
-- a preferred keyword or anchor.
+```bash
+git clone https://github.com/alok-vibe-code/backlink-intelligence.git
+cd backlink-intelligence
+python -m pip install -e .
+```
 
-It will identify the strongest candidate paragraphs and return explainable placement recommendations.
+Verify the installation:
 
-### Before
+```bash
+backlink-intelligence --version
+backlink-intelligence status
+```
 
-> The original publisher paragraph is shown without modification.
+## 1. Audit an existing backlink
 
-### After
+```bash
+backlink-intelligence audit \
+  "https://publisher.example/article" \
+  "https://brand.example/target-page"
+```
 
-> The same paragraph is shown with the target resource integrated naturally, while preserving as much of the original copy as possible.
+Typical evidence includes:
 
-Each recommendation is intended to include:
+- source/target HTTP status,
+- backlink found/not found,
+- anchor text,
+- `nofollow`, `sponsored`, and `ugc` attributes,
+- placement classification,
+- source indexability,
+- page/context relevance,
+- external-link counts,
+- review flags,
+- recommendation,
+- and analysis confidence.
 
-- paragraph/context match,
+JSON output:
+
+```bash
+backlink-intelligence audit SOURCE_URL TARGET_URL --json
+```
+
+Save JSON:
+
+```bash
+backlink-intelligence audit SOURCE_URL TARGET_URL --output audit.json
+```
+
+## 2. Qualify prospects in bulk
+
+Create a CSV:
+
+```csv
+source_url,target_url,preferred_anchor
+https://publisher.example/post,https://brand.example/page,agentic ai course
+```
+
+Run:
+
+```bash
+backlink-intelligence qualify prospects.csv --output qualification-report.csv
+```
+
+The report includes evidence such as relevance, placement potential, outbound-link density, review flags, confidence, and a workflow recommendation:
+
+- `prioritize`
+- `manual_review`
+- `low_priority`
+
+Bulk commands cache repeated URLs during a run and use a small delay between rows by default. Use `--delay` to adjust that delay responsibly.
+
+## 3. Find contextual link placements
+
+This is the signature workflow.
+
+```bash
+backlink-intelligence place \
+  "https://publisher.example/article" \
+  "https://brand.example/target" \
+  --anchor "agentic ai course" \
+  --top 3
+```
+
+For each recommended paragraph the tool returns:
+
+- paragraph number,
+- context-fit level,
 - requested anchor,
 - suggested anchor when the requested wording is awkward,
 - placement strategy,
 - editorial intervention level,
 - original-text preservation,
-- reasoning for the recommendation,
-- and warnings when a paragraph should **not** be used.
+- **Before paragraph**,
+- **After paragraph**,
+- reasons,
+- and review flags.
 
-The goal is not keyword insertion. The goal is **editorially defensible contextual placement**.
+The deterministic rewrite engine deliberately favors minimal editorial change. Its output is a placement draft for human review, not an instruction to publish automatically.
 
-## Evidence-first design
+## 4. Monitor acquired backlinks
 
-Backlink Intelligence prefers transparent dimensions over an unexplained universal score.
+Create a CSV:
 
-Example output direction:
+```csv
+source_url,target_url,expected_anchor
+https://publisher.example/article,https://brand.example/page,AI guide
+```
 
-- **Page relevance:** High
-- **Context relevance:** Very High
-- **Destination fit:** High
-- **Placement:** Editorial Context
-- **Anchor fit:** Strong
-- **Risk signals:** Review
-- **Analysis confidence:** High
-- **Recommendation:** Prioritize
+First check creates the baseline:
 
-A recommendation should always be accompanied by the evidence and limitations that produced it.
+```bash
+backlink-intelligence monitor links.csv \
+  --state backlink-state.json \
+  --output monitor-report.csv
+```
 
-## Planned analysis areas
+Run the same command later to detect:
 
-### Existing backlink audit
-
-- source and target HTTP status
-- redirects and final URLs
-- title and H1 extraction
-- canonical and robots directives
-- backlink presence
-- anchor text
-- `rel` attributes (`nofollow`, `sponsored`, `ugc`)
-- surrounding sentence and paragraph
-- approximate placement classification
-- main-content evidence
-
-### Topical and contextual relevance
-
-Relevance will be evaluated at multiple levels:
-
-1. broader domain/topic signals,
-2. source page ↔ destination page,
-3. source paragraph/context ↔ destination page.
-
-The core implementation is intended to remain local-first and explainable, initially using techniques such as term overlap, TF-IDF, cosine similarity, heading/title alignment, and phrase overlap.
-
-### Source-page and outbound-link evidence
-
-- total external links
-- unique external domains
-- external-link density
-- follow/nofollow distribution
-- repeated commercial patterns
-- outbound-link neighborhood
-- thin-content indicators
-- indexability evidence
-
-These are review signals, not a proprietary "toxicity score."
-
-### Prospect qualification
-
-Bulk CSV analysis is planned to help prioritize outreach targets using evidence such as:
-
-- relevance,
-- destination fit,
-- editorial fit,
-- outbound-link behavior,
-- review flags,
-- and confidence.
-
-### Link monitoring
-
-Planned monitoring will detect changes including:
-
-- backlink removal,
+- removed links,
 - anchor changes,
-- follow → nofollow changes,
-- `sponsored`/`ugc` attribute changes,
-- target changes,
-- source/target redirects,
-- 404/410 responses,
-- noindex changes,
+- `rel` attribute changes,
+- placement changes,
+- source/target status changes,
 - canonical changes,
-- and material placement changes.
+- and robots changes.
 
-## Roadmap
+## 5. Analyze a backlink portfolio
 
-| Release | Milestone | Status |
-| --- | --- | --- |
-| `v0.1.0` | Backlink evidence auditor | Planned |
-| `v0.2.0` | Context and placement classification | Planned |
-| `v0.3.0` | Relevance engine | Planned |
-| `v0.4.0` | Source quality and outbound-link evidence | Planned |
-| `v0.5.0` | Bulk prospect qualification | Planned |
-| `v0.6.0` | Contextual placement recommender | Planned |
-| `v0.7.0` | Before/After placement recommendations | Planned |
-| `v0.8.0` | Backlink monitoring | Planned |
-| `v0.9.0` | Portfolio analysis and historical snapshots | Planned |
-| `v1.0.0` | Stable integrated toolkit | Planned |
-
-See the detailed [project roadmap](docs/roadmap.md).
-
-## Planned interfaces
-
-The analysis engine is intended to support several interfaces without duplicating the underlying logic:
-
-- **CLI** for technical SEOs and developers
-- **CSV / JSON / HTML reports** for SEO workflows
-- **Python package** for integrations
-- **Local browser UI** for non-technical users
-- **Public web interface** as a later phase after the core engine is stable
-
-A third-party user should never need to edit source code just to perform an analysis.
-
-## Installation
-
-The foundation package is already installable for development, but backlink-analysis commands are not yet implemented.
+Input CSV should contain `target_url` and can optionally include `anchor` and `placement`.
 
 ```bash
-python -m pip install -e .
-backlink-intelligence --version
-backlink-intelligence status
+backlink-intelligence portfolio backlinks.csv --output portfolio.json
 ```
 
-## Current CLI
+The report summarizes:
 
-```bash
-backlink-intelligence --help
-backlink-intelligence --version
-backlink-intelligence status
-```
+- anchor-category distribution,
+- destination distribution,
+- placement distribution.
 
-The `audit`, `qualify`, `place`, and `monitor` commands will be introduced incrementally according to the roadmap.
+## Evidence model
 
-## Documentation
+Backlink Intelligence intentionally avoids an unexplained universal 0–100 backlink score.
 
-- [Methodology](docs/methodology.md)
-- [Architecture](docs/architecture.md)
-- [Roadmap](docs/roadmap.md)
-- [Signal definitions](docs/signal-definitions.md)
-- [Limitations](docs/limitations.md)
-- [Ethical crawling](docs/ethical-crawling.md)
+Instead it exposes dimensions such as:
 
-## Methodology background
+- **Relevance:** low / medium / high / very high
+- **Placement:** editorial context / navigation / sidebar / footer / unknown
+- **Risk signals:** explicit review flags
+- **Confidence:** low / medium / high
+- **Recommendation:** workflow guidance, not a ranking claim
 
-The project builds on the evidence-based backlink evaluation ideas discussed in:
+See [Methodology](docs/methodology.md) and [Signal Definitions](docs/signal-definitions.md).
 
-**[Backlink Quality Beyond DA & DR](https://alokblog.com/backlink-quality-beyond-da-dr/)**
+## How relevance works
 
-The article explains the conceptual motivation. This repository is intended to turn that methodology into transparent, testable software.
+The v1 engine is deterministic and local. It combines:
 
-## Local-first and API-optional
+- normalized term overlap,
+- cosine similarity over term-frequency vectors,
+- title/H1 alignment,
+- heading alignment,
+- page-to-page similarity,
+- paragraph-to-target similarity,
+- and shared topical terms.
 
-The core project is intended to work without requiring paid SEO or AI APIs.
+This makes the result reproducible and inspectable without requiring an LLM API.
 
-Optional integrations may be added later for users who already have access to services such as SEO data providers or language-model APIs, but they should enrich rather than gate the core workflow.
+## Link placement philosophy
 
-## Security and crawl safety
+The placement engine follows three principles:
 
-Because the project accepts arbitrary URLs, URL safety is a first-class engineering requirement. Future network-enabled releases will include protections for private-network targets, redirect validation, response-size limits, timeouts, rate limiting, and other controls.
+1. **Editorial fit before keyword insertion.**
+2. **Preserve publisher copy whenever possible.**
+3. **Show the evidence and let a human approve the final wording.**
+
+When the exact requested anchor already exists naturally, the tool uses minimal insertion. Otherwise it adds a conservative contextual sentence rather than rewriting the entire paragraph.
+
+## Crawl and security safeguards
+
+The fetcher is intentionally bounded:
+
+- only HTTP/HTTPS URLs,
+- embedded URL credentials blocked,
+- localhost/private/link-local/reserved IPs blocked,
+- DNS-resolved private addresses blocked,
+- redirects revalidated,
+- redirect count limited,
+- request timeout,
+- maximum HTML response size,
+- non-HTML content rejected,
+- identifiable user agent.
 
 See [SECURITY.md](SECURITY.md) and [Ethical Crawling](docs/ethical-crawling.md).
 
+## Current limitations
+
+The v1 parser focuses on server-delivered HTML. Pages whose meaningful content or links are rendered only by client-side JavaScript may require browser rendering, which is intentionally not bundled into the zero-dependency core.
+
+The Before/After engine is deterministic and conservative. It does not attempt unrestricted AI copywriting. Optional model-assisted rewriting can be added later without making it mandatory for core functionality.
+
+See [Limitations](docs/limitations.md).
+
+## Testing
+
+The repository includes deterministic offline tests for:
+
+- HTML/meta/link extraction,
+- placement classification,
+- URL normalization,
+- outbound-link evidence,
+- relevance,
+- contextual placement ranking,
+- Before/After generation,
+- monitoring change detection,
+- portfolio analysis,
+- URL safety,
+- CLI behavior.
+
+Run:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+## Methodology background
+
+This project implements ideas developed in:
+
+**[Backlink Quality Beyond DA & DR](https://alokblog.com/backlink-quality-beyond-da-dr/)**
+
+The article explains the conceptual framework. This repository turns that framework into transparent, testable software.
+
+## Phase 2: public website integration
+
+The GitHub repository is the source of truth for the analysis engine. A later phase can expose selected capabilities through a public interface on `alokblog.com`, using the same package rather than duplicating SEO logic.
+
+The initial public web version is expected to focus on:
+
+- single backlink audit,
+- contextual placement analysis,
+- Before/After placement recommendations.
+
+Bulk crawling and continuous monitoring are better suited to the local/open-source version unless hosted infrastructure is deliberately provisioned for them.
+
+## Project structure
+
+```text
+backlink_intelligence/
+├── audit.py
+├── cli.py
+├── fetcher.py
+├── html_utils.py
+├── link_analysis.py
+├── models.py
+├── monitor.py
+├── placement.py
+├── portfolio.py
+├── qualify.py
+├── relevance.py
+├── reporting.py
+└── safety.py
+```
+
+## Docker
+
+Build and run the CLI without installing Python packages into your host environment:
+
+```bash
+docker build -t backlink-intelligence .
+docker run --rm backlink-intelligence --help
+```
+
 ## Contributing
 
-Contributions, test cases, documentation improvements, and evidence-based methodology discussions are welcome.
-
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
+Contributions, test cases, parser improvements, and evidence-based methodology discussions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first.
 
 ## License
 
-Released under the [MIT License](LICENSE).
+MIT. See [LICENSE](LICENSE).
 
 ## Disclaimer
 

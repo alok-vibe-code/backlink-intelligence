@@ -1,82 +1,39 @@
-# Signal Definitions
+# Signal definitions
 
-This document defines terminology used by Backlink Intelligence. Exact algorithms may evolve, but public output should retain clear definitions.
+## Relevance levels
 
-## Page relevance
+Relevance combines deterministic page/context similarity signals and is represented as:
 
-How strongly the source page's subject matter aligns with the target page.
+- `low`
+- `medium`
+- `high`
+- `very_high`
 
-Planned labels:
+Thresholds are intentionally visible in the source code and may evolve with benchmark data.
 
-- Very Low
-- Low
-- Medium
-- High
-- Very High
+## Placement values
 
-## Context relevance
+- `editorial_context`: link detected inside `<main>` or `<article>`.
+- `navigation`: link detected inside `<nav>` or `<header>`.
+- `sidebar`: link detected inside `<aside>`.
+- `footer`: link detected inside `<footer>`.
+- `unknown`: HTML structure is insufficient to make a confident landmark classification.
 
-How strongly the local paragraph/sentence around a link or proposed placement aligns with the target page.
+## Review flags
 
-## Destination fit
+Examples include:
 
-Whether the target URL is a contextually appropriate destination for the source discussion.
+- `high_external_link_density`
+- `many_unique_external_domains`
+- `many_followed_external_links`
+- `source_not_indexable`
+- `source_unavailable`
+- `target_unavailable`
+- `sponsored_attribute_present`
+- `weak_context_match_manual_review_required`
 
-This is an editorial/semantic observation, not a ranking prediction.
+A flag means "inspect this evidence," not "Google considers this link spam."
 
-## Placement type
+## Confidence
 
-Planned categories:
-
-- Editorial Context
-- Resource List
-- Author Bio
-- Navigation
-- Sidebar
-- Footer
-- Comment / UGC
-- Sponsored Block
-- Unknown
-
-## Anchor fit
-
-A review of whether the anchor text is grammatically natural, contextually useful, and semantically aligned with the destination.
-
-## Editorial intervention
-
-How much a suggested placement alters the publisher's existing paragraph.
-
-Planned labels:
-
-- Minimal
-- Low
-- Medium
-- High
-
-The project may also expose supporting counts such as original words, words added, and original words modified.
-
-## Review signals
-
-Observable evidence that deserves human attention. Examples may include:
-
-- unusually high external-link density
-- several unrelated commercial outbound categories
-- ambiguous placement
-- weak destination fit
-- requested anchor with poor grammatical fit
-- crawl/indexability uncertainty
-
-A review signal is not automatically a spam or penalty determination.
-
-## Analysis confidence
-
-How confident the software is that it successfully extracted and interpreted the relevant evidence.
-
-Confidence can be reduced by factors such as:
-
-- blocked fetching
-- JavaScript-dependent rendering
-- ambiguous main-content extraction
-- missing target content
-- unusual HTML structure
-- conflicting metadata
+Confidence describes how complete the observable evidence is. It is not confidence in ranking impact.

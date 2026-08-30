@@ -6,17 +6,16 @@ from backlink_intelligence import __version__
 from backlink_intelligence.cli import main
 
 
-class FoundationTests(unittest.TestCase):
-    def test_version_is_pre_alpha_foundation(self):
-        self.assertEqual(__version__, "0.0.1")
+class CLITests(unittest.TestCase):
+    def test_version_is_stable(self):
+        self.assertEqual(__version__, "1.0.0")
 
     def test_status_command(self):
         output = io.StringIO()
         with redirect_stdout(output):
             exit_code = main(["status"])
         self.assertEqual(exit_code, 0)
-        self.assertIn("v0.1.0 Backlink Evidence Auditor", output.getvalue())
-        self.assertIn("Discover -> Qualify -> Place -> Monitor", output.getvalue())
+        self.assertIn("audit, qualify, place, monitor, portfolio", output.getvalue())
 
     def test_root_help_returns_success(self):
         output = io.StringIO()

@@ -1,114 +1,36 @@
 # Architecture
 
-Backlink Intelligence is intended to have one reusable analysis engine with multiple interfaces.
+Backlink Intelligence separates analysis logic from interfaces so the same engine can power the CLI, automation, and a later website integration.
 
 ```text
-                    Backlink Intelligence Engine
-                              |
-          +-------------------+-------------------+
-          |                   |                   |
-         CLI              Local Web UI       Python Package
-          |                   |                   |
-       CSV/JSON             Browser           Integrations
+CLI / CSV / future web API
+          |
+          v
+ Backlink Intelligence engine
+          |
+  +-------+-----------------------------+
+  |       |        |        |           |
+Fetcher  Parser  Relevance Placement  Monitoring
+  |       |        |        |           |
+Safety  Evidence  Scoring  Before/After History
 ```
 
-A later public web deployment should reuse the same engine rather than reimplement SEO logic in a separate codebase.
+## Modules
 
-## Planned engine layers
+- `safety.py`: validates public HTTP/HTTPS destinations and blocks private-network targets.
+- `fetcher.py`: bounded fetches, redirect checks, response-size limits, HTML-only processing.
+- `html_utils.py`: standard-library HTML extraction.
+- `models.py`: typed dataclasses used across commands.
+- `link_analysis.py`: URL normalization, backlink detection, outbound-link evidence.
+- `relevance.py`: deterministic similarity and shared-term analysis.
+- `audit.py`: combines page, backlink, relevance, and outbound evidence.
+- `qualify.py`: batch prospect decision workflow.
+- `placement.py`: paragraph ranking and Before/After drafts.
+- `monitor.py`: persisted baselines and change detection.
+- `portfolio.py`: anchor, destination, and placement distributions.
+- `reporting.py`: terminal/JSON presentation helpers.
+- `cli.py`: command-line interface.
 
-### Fetching and safety
+## Interface rule
 
-Responsible for:
-
-- URL normalization and validation
-- network safety controls
-- timeouts and redirect limits
-- response-size limits
-- caching
-- polite rate limiting
-
-### Extraction
-
-Responsible for:
-
-- HTML parsing
-- main-content extraction
-- metadata extraction
-- headings
-- link extraction
-- context extraction
-
-### Evidence models
-
-Typed structures representing:
-
-- source page
-- target page
-- detected backlink
-- surrounding context
-- link attributes
-- crawl/indexability observations
-
-### Relevance
-
-Responsible for explainable relevance signals between:
-
-- source and target,
-- context and target,
-- and later sampled domain/topic evidence.
-
-### Placement
-
-Responsible for:
-
-- candidate paragraph ranking
-- anchor fit
-- insertion strategy selection
-- Before/After recommendations
-- editorial intervention measurement
-- rejection reasons
-
-### Qualification
-
-Combines evidence into transparent review dimensions such as:
-
-- relevance
-- destination fit
-- editorial fit
-- review signals
-- confidence
-- recommendation
-
-### Monitoring
-
-Responsible for:
-
-- baseline snapshots
-- change detection
-- retention history
-- status transitions
-
-### Reporting
-
-Intended output formats:
-
-- terminal
-- JSON
-- CSV
-- HTML
-
-## Public website phase
-
-The future public architecture should resemble:
-
-```text
-alokblog.com/tools/backlink-intelligence/
-                  |
-             Web front end
-                  |
-          Secure analysis API
-                  |
-       backlink_intelligence package
-```
-
-The public service requires stronger controls than the local CLI, including SSRF defenses, abuse prevention, rate limiting, request isolation, and bounded resource usage.
+Business logic must not be embedded in the CLI. The future alokblog.com backend should import these modules directly, preserving one source of truth.
