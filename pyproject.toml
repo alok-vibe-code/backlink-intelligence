@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "backlink-intelligence"
+version = "0.0.1"
+description = "Open-source backlink intelligence based on evidence, context, and editorial fit."
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+  {name = "alok-vibe-code"}
+]
+keywords = [
+  "seo",
+  "backlinks",
+  "link-building",
+  "technical-seo",
+  "content-analysis"
+]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Internet :: WWW/HTTP",
+]
+
+[project.urls]
+Homepage = "https://alokblog.com/backlink-quality-beyond-da-dr/"
+Repository = "https://github.com/alok-vibe-code/backlink-intelligence"
+Issues = "https://github.com/alok-vibe-code/backlink-intelligence/issues"
+
+[project.scripts]
+backlink-intelligence = "backlink_intelligence.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["backlink_intelligence*"]
