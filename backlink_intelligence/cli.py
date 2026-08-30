@@ -6,9 +6,9 @@ import argparse
 import sys
 
 from backlink_intelligence import __version__
+from .analysis import PlacementAnalyzer
 from .audit import audit_backlink
 from .monitor import monitor_csv
-from .placement import suggest_placements
 from .portfolio import analyze_portfolio
 from .qualify import qualify_csv
 from .reporting import audit_text, write_json
@@ -74,6 +74,7 @@ def _placement_text(items) -> str:
                 f"Requested anchor:      {item.requested_anchor}",
                 f"Placed anchor:         {item.suggested_anchor}",
                 f"Strategy:              {item.strategy}",
+                f"Recommendation status:{item.recommendation_status}",
                 f"Editorial intervention:{item.intervention}",
                 f"Text preservation:     {item.preservation_percent:.1f}%",
                 "",
@@ -117,12 +118,18 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "place":
-            items = suggest_placements(args.source_url, args.target_url, args.anchor, top_n=args.top)
+            analysis = PlacementAnalyzer().analyze(
+                args.source_url,
+                args.target_url,
+                args.anchor,
+                max_opportunities=args.top,
+            )
+            items = analysis.opportunities
             payload = [item.to_dict() for item in items]
             if args.output:
                 write_json(payload, args.output)
             print(write_json(payload) if args.as_json else _placement_text(items))
-            return 0 if items else 3
+            return 0 if analysis.status in {"completed", "no_suitable_placement"} else 3
 
         if args.command == "monitor":
             rows = monitor_csv(args.input_csv, args.state, args.output, delay_seconds=args.delay)
