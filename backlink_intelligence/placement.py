@@ -70,6 +70,73 @@ def _simple_anchor_variants(anchor: str) -> list[str]:
     return variants
 
 
+def _fallback_anchor_case(anchor: str) -> str:
+    """Use conservative editorial casing for generated fallback copy.
+
+    When a requested anchor begins with a short acronym followed by title-cased words,
+    preserve the acronym but lowercase the descriptive words. This turns ``AI Agent``
+    into ``AI agent`` without changing arbitrary brand or mixed-case anchors.
+    """
+    words = anchor.strip().split()
+    if len(words) < 2:
+        return anchor.strip()
+    if not (words[0].isupper() and 1 < len(words[0]) <= 5):
+        return anchor.strip()
+
+    changed = False
+    output = [words[0]]
+    for word in words[1:]:
+        if word[:1].isupper() and word[1:].islower():
+            output.append(word.lower())
+            changed = True
+        else:
+            output.append(word)
+    return " ".join(output) if changed else anchor.strip()
+
+
+def _contextual_fallback_sentence(
+    paragraph: str,
+    anchor: str,
+    target_url: str,
+    target_title: str,
+) -> tuple[str, str, list[str]]:
+    """Create concise deterministic fallback copy without dumping the target title."""
+    placed_anchor = _fallback_anchor_case(anchor)
+    linked = f"[{placed_anchor}]({target_url})"
+    target_lower = target_title.lower()
+    paragraph_lower = paragraph.lower()
+
+    cost_intent = any(term in target_lower for term in ("cost", "pricing", "price", "tco", "roi"))
+    cost_context = any(term in paragraph_lower for term in ("cost", "price", "pricing", "budget", "expense", "roi", "investment", "expensive"))
+
+    notes: list[str] = ["target_title_not_injected_into_source_copy"]
+    if placed_anchor != anchor:
+        notes.append("anchor_casing_adapted_for_generated_sentence")
+
+    if cost_intent and cost_context:
+        sentence = (
+            f"These factors are useful when estimating {linked} implementation costs, "
+            "ongoing operating expenses, and expected ROI."
+        )
+        notes.append("destination_intent_used_for_contextual_sentence")
+        return sentence, placed_anchor, notes
+
+    if cost_intent:
+        sentence = (
+            f"Businesses evaluating this type of automation should also account for {linked} costs, "
+            "including implementation, integrations, ongoing operation, and expected ROI."
+        )
+        notes.append("destination_intent_used_for_contextual_sentence")
+        return sentence, placed_anchor, notes
+
+    if any(term in target_lower for term in ("roadmap", "learning", "course", "guide")):
+        sentence = f"Readers who want a structured next step can explore this {linked} for more detail."
+        return sentence, placed_anchor, notes
+
+    sentence = f"Readers who want additional context can review this {linked} resource."
+    return sentence, placed_anchor, notes
+
+
 def _compose_after(
     paragraph: str,
     anchor: str,
@@ -102,13 +169,10 @@ def _compose_after(
                 ["anchor_adapted_to_source_grammar", "requested_anchor_not_used_verbatim"],
             )
 
-    linked = f"[{anchor}]({target_url})"
-    topic = target_title.strip()
-    if topic and topic.lower() != anchor.lower():
-        sentence = f"For a more detailed resource on {topic}, see {linked}."
-    else:
-        sentence = f"For a more detailed resource on this topic, see {linked}."
-    return "contextual_sentence", paragraph.rstrip() + " " + sentence, anchor, []
+    sentence, placed_anchor, notes = _contextual_fallback_sentence(
+        paragraph, anchor, target_url, target_title
+    )
+    return "contextual_sentence", paragraph.rstrip() + " " + sentence, placed_anchor, notes
 
 
 def _stem(term: str) -> str:

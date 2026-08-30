@@ -11,6 +11,7 @@ All notable changes to Backlink Intelligence are documented here.
 - Added conservative singular/plural anchor adaptation when the natural grammatical form already exists in source copy.
 - Added destination-intent scoring so context specific to the destination topic receives more weight than generic anchor repetition.
 - Added destination-fit and actual placed-anchor details to placement CLI output.
+- Replaced mechanical target-title fallback sentences with concise destination-intent-aware editorial copy.
 
 ## 1.0.0 - 2026-08-30
 

@@ -106,6 +106,45 @@ class PlacementTests(unittest.TestCase):
             self.assertEqual(item.destination_fit, "low")
 
 
+    @patch("backlink_intelligence.placement.fetch_page")
+    def test_contextual_sentence_avoids_target_title_dump(self, fetch):
+        source = parse_page(
+            "<main><p>AI automation does not have to be expensive, but the cost depends on what you want to build and the systems that need to be connected.</p></main>",
+            requested_url="https://s.com", final_url="https://s.com", status_code=200,
+        )
+        target = parse_page(
+            "<title>AI Agent Cost in 2026: Pricing, TCO and ROI Guide</title><h1>AI Agent Cost</h1><p>Pricing depends on implementation, integrations, operations, and expected ROI.</p>",
+            requested_url="https://t.com", final_url="https://t.com", status_code=200,
+        )
+        fetch.side_effect = [source, target]
+        item = suggest_placements("https://s.com", "https://t.com", "AI Agent", top_n=1)[0]
+        self.assertEqual(item.strategy, "contextual_sentence")
+        self.assertNotIn("AI Agent Cost in 2026: Pricing, TCO and ROI Guide", item.after)
+        self.assertNotIn("see [", item.after)
+        self.assertIn("[AI agent](https://t.com)", item.after)
+        self.assertIn("implementation costs", item.after)
+        self.assertEqual(item.suggested_anchor, "AI agent")
+        self.assertIn("target_title_not_injected_into_source_copy", item.reasons)
+        self.assertIn("destination_intent_used_for_contextual_sentence", item.reasons)
+
+    @patch("backlink_intelligence.placement.fetch_page")
+    def test_general_contextual_sentence_does_not_echo_target_title(self, fetch):
+        source = parse_page(
+            "<main><p>Teams often introduce these capabilities progressively as systems become more autonomous and reliable across increasingly complex production workflows.</p></main>",
+            requested_url="https://s.com", final_url="https://s.com", status_code=200,
+        )
+        target = parse_page(
+            "<title>Agentic AI Learning Roadmap</title><h1>Learn Agentic AI</h1><p>A structured roadmap for tool calling, retrieval, memory, evaluation, and production reliability.</p>",
+            requested_url="https://t.com", final_url="https://t.com", status_code=200,
+        )
+        fetch.side_effect = [source, target]
+        item = suggest_placements("https://s.com", "https://t.com", "Agentic AI learning roadmap", top_n=1)[0]
+        self.assertEqual(item.strategy, "contextual_sentence")
+        self.assertNotIn("For a more detailed resource on", item.after)
+        self.assertNotIn("see [", item.after)
+        self.assertIn("[Agentic AI learning roadmap](https://t.com)", item.after)
+
+
 
 if __name__ == "__main__":
     unittest.main()
