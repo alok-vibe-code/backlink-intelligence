@@ -322,3 +322,18 @@ MIT. See [LICENSE](LICENSE).
 ## Disclaimer
 
 Backlink Intelligence is an independent open-source SEO research and workflow tool. It is not affiliated with Google, Ahrefs, Semrush, Moz, Majestic, or any other search engine or SEO platform. Outputs should be treated as evidence for professional review, not as guarantees of ranking impact, penalties, or search-engine behavior.
+
+## Public beta API
+
+Version 1.1 adds an optional FastAPI service for the public Backlink Placement Analyzer. Install it with:
+
+```bash
+pip install ".[api]"
+uvicorn backlink_intelligence.api:app --host 127.0.0.1 --port 8000
+```
+
+The public endpoint is `POST /v1/place`. It accepts a source URL, target URL, preferred anchor, and Cloudflare Turnstile token. A valid analysis returns either `completed` or `no_suitable_placement`; the latter is a successful HTTP 200 outcome, not an API error.
+
+Generated copy is returned as plain `after_text` plus `after_segments` containing only text and link records. The API never returns executable markup. Numeric scores are internal ranking evidence and must not be presented as probabilities, authority scores, ranking potential, or percentage quality. Beta thresholds are private server configuration and are not included in responses.
+
+Production deployment settings are documented in `render.yaml` and `.env.example`. Free hosting has capacity, cold-start, and bandwidth limits; the service does not require a database, paid SEO data, or an LLM API.

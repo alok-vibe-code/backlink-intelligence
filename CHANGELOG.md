@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.0 - 2026-08-30
+
+- Add the shared placement analysis service and FastAPI v1 interface.
+- Add genuine no-match and editorial-review outcomes.
+- Return Unicode-safe structured text and link segments instead of browser offsets.
+- Pin outbound connections to validated public IP addresses across redirects and robots requests.
+- Add compressed and decompressed response limits, strict API validation, Turnstile verification, rate limits, concurrency controls, and production Host/origin enforcement.
+- Add Render Free deployment configuration and v1 contract tests.
+
 All notable changes to Backlink Intelligence are documented here.
 
 ## 1.0.1 - 2026-08-30

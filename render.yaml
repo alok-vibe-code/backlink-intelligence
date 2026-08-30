@@ -1,0 +1,40 @@
+services:
+  - type: web
+    name: backlink-intelligence-api
+    runtime: python
+    plan: free
+    buildCommand: pip install ".[api]"
+    startCommand: uvicorn backlink_intelligence.api:app --host 0.0.0.0 --port $PORT --workers 1 --no-access-log
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: BI_ENVIRONMENT
+        value: production
+      - key: BI_ALLOWED_ORIGINS
+        value: https://alokblog.com
+      - key: BI_ALLOWED_HOSTS
+        value: api.alokblog.com
+      - key: BI_TURNSTILE_HOSTNAME
+        value: alokblog.com
+      - key: BI_TURNSTILE_SECRET
+        sync: false
+      - key: BI_MIN_CONTEXT_SCORE
+        value: "0.15"
+      - key: BI_MIN_DESTINATION_SCORE
+        value: "0.08"
+      - key: BI_MAX_OPPORTUNITIES
+        value: "3"
+      - key: BI_RATE_LIMIT_PER_HOUR
+        value: "5"
+      - key: BI_MAX_CONCURRENCY
+        value: "2"
+      - key: BI_ANALYSIS_TIMEOUT
+        value: "35"
+      - key: BI_CONNECT_TIMEOUT
+        value: "5"
+      - key: BI_READ_TIMEOUT
+        value: "12"
+      - key: BI_MAX_COMPRESSED_BYTES
+        value: "1000000"
+      - key: BI_MAX_DECOMPRESSED_BYTES
+        value: "2000000"

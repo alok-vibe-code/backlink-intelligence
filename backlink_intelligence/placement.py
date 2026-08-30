@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 
 from .fetcher import FetchConfig, fetch_page
-from .models import PageEvidence, PlacementSuggestion
+from .models import PageEvidence, PlacementSuggestion, TextSegment
 from .relevance import similarity, tokens
 
 
@@ -97,12 +97,10 @@ def _fallback_anchor_case(anchor: str) -> str:
 def _contextual_fallback_sentence(
     paragraph: str,
     anchor: str,
-    target_url: str,
     target_title: str,
-) -> tuple[str, str, list[str]]:
+) -> tuple[str, str, str, list[str]]:
     """Create concise deterministic fallback copy without dumping the target title."""
     placed_anchor = _fallback_anchor_case(anchor)
-    linked = f"[{placed_anchor}]({target_url})"
     target_lower = target_title.lower()
     paragraph_lower = paragraph.lower()
 
@@ -114,27 +112,47 @@ def _contextual_fallback_sentence(
         notes.append("anchor_casing_adapted_for_generated_sentence")
 
     if cost_intent and cost_context:
-        sentence = (
-            f"These factors are useful when estimating {linked} implementation costs, "
-            "ongoing operating expenses, and expected ROI."
-        )
         notes.append("destination_intent_used_for_contextual_sentence")
-        return sentence, placed_anchor, notes
+        return (
+            "These factors are useful when estimating ",
+            " implementation costs, ongoing operating expenses, and expected ROI.",
+            placed_anchor,
+            notes,
+        )
 
     if cost_intent:
-        sentence = (
-            f"Businesses evaluating this type of automation should also account for {linked} costs, "
-            "including implementation, integrations, ongoing operation, and expected ROI."
-        )
         notes.append("destination_intent_used_for_contextual_sentence")
-        return sentence, placed_anchor, notes
+        return (
+            "Businesses evaluating this type of automation should also account for ",
+            " costs, including implementation, integrations, ongoing operation, and expected ROI.",
+            placed_anchor,
+            notes,
+        )
 
     if any(term in target_lower for term in ("roadmap", "learning", "course", "guide")):
-        sentence = f"Readers who want a structured next step can explore this {linked} for more detail."
-        return sentence, placed_anchor, notes
+        return (
+            "Readers who want a structured next step can explore this ",
+            " for more detail.",
+            placed_anchor,
+            notes,
+        )
 
-    sentence = f"Readers who want additional context can review this {linked} resource."
-    return sentence, placed_anchor, notes
+    return (
+        "Readers who want additional context can review this ",
+        " resource.",
+        placed_anchor,
+        notes,
+    )
+
+
+def _segments(prefix: str, anchor: str, target_url: str, suffix: str) -> list[TextSegment]:
+    segments: list[TextSegment] = []
+    if prefix:
+        segments.append(TextSegment(type="text", text=prefix))
+    segments.append(TextSegment(type="link", text=anchor, url=target_url))
+    if suffix:
+        segments.append(TextSegment(type="text", text=suffix))
+    return segments
 
 
 def _compose_after(
@@ -142,17 +160,21 @@ def _compose_after(
     anchor: str,
     target_url: str,
     target_title: str,
-) -> tuple[str, str, str, list[str]]:
+) -> tuple[str, str, str, list[TextSegment], str, list[str]]:
     """Compose the draft while preserving source grammar/capitalization when possible."""
     exact = _find_complete_phrase(paragraph, anchor)
     if exact is not None:
         placed_anchor = exact.group(0)
         linked = f"[{placed_anchor}]({target_url})"
         after = paragraph[: exact.start()] + linked + paragraph[exact.end() :]
+        after_text = paragraph
+        segments = _segments(
+            paragraph[: exact.start()], placed_anchor, target_url, paragraph[exact.end() :]
+        )
         notes: list[str] = []
         if placed_anchor != anchor:
             notes.append("source_anchor_capitalization_preserved")
-        return "minimal_insertion", after, placed_anchor, notes
+        return "minimal_insertion", after, after_text, segments, placed_anchor, notes
 
     # If the exact requested form is not present, prefer a complete natural word-form
     # already in the publisher copy instead of creating artifacts such as [AI Agent]s.
@@ -162,17 +184,33 @@ def _compose_after(
             placed_anchor = match.group(0)
             linked = f"[{placed_anchor}]({target_url})"
             after = paragraph[: match.start()] + linked + paragraph[match.end() :]
+            after_text = paragraph
+            segments = _segments(
+                paragraph[: match.start()], placed_anchor, target_url, paragraph[match.end() :]
+            )
             return (
                 "minimal_insertion",
                 after,
+                after_text,
+                segments,
                 placed_anchor,
                 ["anchor_adapted_to_source_grammar", "requested_anchor_not_used_verbatim"],
             )
 
-    sentence, placed_anchor, notes = _contextual_fallback_sentence(
-        paragraph, anchor, target_url, target_title
+    sentence_prefix, sentence_suffix, placed_anchor, notes = _contextual_fallback_sentence(
+        paragraph, anchor, target_title
     )
-    return "contextual_sentence", paragraph.rstrip() + " " + sentence, placed_anchor, notes
+    prefix = paragraph.rstrip() + " " + sentence_prefix
+    after_text = prefix + placed_anchor + sentence_suffix
+    after = prefix + f"[{placed_anchor}]({target_url})" + sentence_suffix
+    return (
+        "contextual_sentence",
+        after,
+        after_text,
+        _segments(prefix, placed_anchor, target_url, sentence_suffix),
+        placed_anchor,
+        notes,
+    )
 
 
 def _stem(term: str) -> str:
@@ -231,6 +269,8 @@ def rank_placements(
     target_url: str,
     *,
     top_n: int = 3,
+    min_context_score: float = 0.0,
+    min_destination_score: float = 0.0,
 ) -> list[PlacementSuggestion]:
     if source.status_code != 200 or target.status_code != 200:
         return []
@@ -250,14 +290,17 @@ def rank_placements(
         # Destination intent gets meaningful weight so a pricing/cost paragraph beats a
         # generic paragraph that merely repeats the requested anchor.
         score = round((0.62 * semantic_score) + (0.30 * destination_score) + (0.08 * anchor_overlap), 4)
-        candidates.append((score, destination_score, i, paragraph))
+        if score >= min_context_score and destination_score >= min_destination_score:
+            candidates.append((score, destination_score, i, paragraph))
 
     candidates.sort(key=lambda item: (-item[0], -item[1], item[2]))
     suggestions: list[PlacementSuggestion] = []
     for rank, (score, destination_score, index, paragraph) in enumerate(candidates[: max(top_n, 1)], start=1):
-        strategy, after, placed_anchor, compose_notes = _compose_after(paragraph, anchor, target_url, target.title)
+        strategy, after, after_text, after_segments, placed_anchor, compose_notes = _compose_after(
+            paragraph, anchor, target_url, target.title
+        )
         original_words = max(len(paragraph.split()), 1)
-        after_words = len(after.split())
+        after_words = len(after_text.split())
         added = max(after_words - original_words, 0)
         preservation = 100.0 if strategy in {"minimal_insertion", "contextual_sentence"} else 90.0
         warnings = list(anchor_warnings)
@@ -273,11 +316,18 @@ def rank_placements(
                 reasons.append(note)
         if destination_score >= 0.14:
             reasons.append("strong_destination_intent_alignment")
-        elif destination_score < 0.08:
-            warnings.append("weak_destination_intent_alignment")
-        if score < 0.12:
-            warnings.append("weak_context_match_manual_review_required")
         context_level = "very_high" if score >= 0.48 else "high" if score >= 0.30 else "medium" if score >= 0.15 else "low"
+        intervention = _intervention(preservation, added)
+        near_threshold = (
+            score < min_context_score + 0.05
+            or destination_score < min_destination_score + 0.03
+        )
+        review_required = bool(
+            strategy != "minimal_insertion"
+            or warnings
+            or intervention != "low"
+            or near_threshold
+        )
         suggestions.append(
             PlacementSuggestion(
                 rank=rank,
@@ -291,9 +341,13 @@ def rank_placements(
                 strategy=strategy,
                 before=paragraph,
                 after=after,
+                after_text=after_text,
+                after_segments=after_segments,
                 added_words=added,
                 preservation_percent=preservation,
-                intervention=_intervention(preservation, added),
+                intervention=intervention,
+                recommendation_status="manual_review" if review_required else "recommended",
+                review_required=review_required,
                 reasons=reasons,
                 warnings=warnings,
             )

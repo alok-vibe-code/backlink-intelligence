@@ -100,6 +100,19 @@ class AuditResult:
 
 
 @dataclass(slots=True)
+class TextSegment:
+    type: str
+    text: str
+    url: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        payload = {"type": self.type, "text": self.text}
+        if self.type == "link":
+            payload["url"] = self.url
+        return payload
+
+
+@dataclass(slots=True)
 class PlacementSuggestion:
     rank: int
     paragraph_index: int
@@ -112,9 +125,13 @@ class PlacementSuggestion:
     strategy: str
     before: str
     after: str
+    after_text: str
+    after_segments: list[TextSegment]
     added_words: int
     preservation_percent: float
     intervention: str
+    recommendation_status: str
+    review_required: bool
     reasons: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 

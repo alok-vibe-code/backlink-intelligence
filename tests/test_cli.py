@@ -8,7 +8,7 @@ from backlink_intelligence.cli import main
 
 class CLITests(unittest.TestCase):
     def test_version_is_stable(self):
-        self.assertEqual(__version__, "1.0.1")
+        self.assertEqual(__version__, "1.1.0")
 
     def test_status_command(self):
         output = io.StringIO()
