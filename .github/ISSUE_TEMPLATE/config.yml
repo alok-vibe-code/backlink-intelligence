@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/alok-vibe-code/backlink-intelligence/security
+    about: Please report security-sensitive issues privately rather than through a public issue.
