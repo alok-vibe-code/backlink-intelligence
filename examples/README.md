@@ -1,14 +1,37 @@
 # Examples
 
-Runnable backlink-analysis examples will be added as functional releases ship.
+## Audit
 
-Planned examples include:
+```bash
+backlink-intelligence audit "https://publisher.example/article" "https://brand.example/page"
+```
 
-- auditing an existing backlink,
-- inspecting `rel` attributes and surrounding context,
-- qualifying a CSV of outreach prospects,
-- finding contextual placement opportunities,
-- exporting a Before/After placement brief,
-- and monitoring previously acquired links.
+## Placement
 
-The foundation repository intentionally does not include fake analysis output presented as if it came from a working crawler.
+```bash
+backlink-intelligence place \
+  "https://publisher.example/article" \
+  "https://brand.example/page" \
+  --anchor "data science course" \
+  --top 3
+```
+
+## Bulk qualification
+
+Use `sample-data/prospects.csv` as the input format.
+
+```bash
+backlink-intelligence qualify sample-data/prospects.csv --output qualification-report.csv
+```
+
+## Monitoring
+
+Use `sample-data/links.csv` as the input format.
+
+```bash
+backlink-intelligence monitor sample-data/links.csv
+```
+
+## Portfolio
+
+Use `sample-data/backlinks.csv` as an example structure.

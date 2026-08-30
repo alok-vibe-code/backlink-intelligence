@@ -19,7 +19,7 @@ Contributions should preserve the project's core principles:
 git clone https://github.com/alok-vibe-code/backlink-intelligence.git
 cd backlink-intelligence
 python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 python -m pip install -e .
 python -m unittest discover -s tests -v
 ```

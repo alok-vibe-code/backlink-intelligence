@@ -1,22 +1,21 @@
-# Ethical Crawling
+# Ethical crawling
 
-Backlink Intelligence should collect only the information required for the requested analysis and should avoid unnecessary load on third-party websites.
+Backlink Intelligence is designed for controlled SEO analysis, not high-volume indiscriminate crawling.
 
-## Principles
+## Built-in boundaries
 
-- Use a transparent, configurable user agent.
-- Apply conservative per-host rate limits.
-- Use timeouts and bounded retries.
-- Avoid repeatedly fetching identical resources when cached evidence is sufficient.
-- Bound response sizes and redirect chains.
-- Do not attempt to bypass authentication, paywalls, CAPTCHAs, or access controls.
-- Do not use the project as a generic proxy or content-copying service.
-- Treat bulk analysis as a queue, not as unbounded concurrency.
+- HTTP/HTTPS only
+- identifiable user agent
+- timeouts
+- response-size limits
+- redirect limits
+- private-network blocking
+- HTML-only processing
+- repeated-URL caching inside bulk commands
+- configurable delay between bulk rows
 
-## Robots and site policies
+## User responsibility
 
-Crawling behavior should be documented and configurable. Users remain responsible for complying with applicable laws, contractual terms, and website policies in their jurisdiction and use case.
+Users should respect website terms, applicable laws, access controls, and reasonable request rates. Do not use the tool to bypass authentication, anti-bot controls, or technical restrictions.
 
-## Data minimization
-
-Reports should store only the evidence required for analysis. A future public web service should avoid permanently storing user-submitted URLs and extracted content unless storage is clearly disclosed and necessary.
+For bulk prospect work, keep lists targeted and avoid repeatedly requesting the same website at aggressive rates. A hosted version should add centralized rate limiting, caching, concurrency control, and abuse prevention.

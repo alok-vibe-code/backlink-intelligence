@@ -1,0 +1,3 @@
+source_url,target_url,anchor,placement
+https://publisher.example/a,https://brand.example/page,Brand guide,editorial_context
+https://publisher.example/b,https://brand.example/page,https://brand.example/page,resource_list
