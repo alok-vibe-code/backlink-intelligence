@@ -117,8 +117,6 @@ The report includes evidence such as relevance, placement potential, outbound-li
 - `manual_review`
 - `low_priority`
 
-Bulk commands cache repeated URLs during a run and use a small delay between rows by default. Use `--delay` to adjust that delay responsibly.
-
 ## 3. Find contextual link placements
 
 This is the signature workflow.
@@ -135,8 +133,9 @@ For each recommended paragraph the tool returns:
 
 - paragraph number,
 - context-fit level,
+- destination-fit level and score,
 - requested anchor,
-- suggested anchor when the requested wording is awkward,
+- actual placed anchor (preserving source capitalization/grammar where possible),
 - placement strategy,
 - editorial intervention level,
 - original-text preservation,
@@ -145,7 +144,7 @@ For each recommended paragraph the tool returns:
 - reasons,
 - and review flags.
 
-The deterministic rewrite engine deliberately favors minimal editorial change. Its output is a placement draft for human review, not an instruction to publish automatically.
+The deterministic rewrite engine deliberately favors minimal editorial change. Exact phrase matching uses complete word boundaries, preserves the publisher's existing capitalization, and can conservatively adapt a singular/plural anchor to the grammatical form already present in source copy. Destination-intent scoring also helps distinguish a paragraph that matches the target's specific topic from one that merely repeats the requested anchor. Its output is a placement draft for human review, not an instruction to publish automatically.
 
 ## 4. Monitor acquired backlinks
 
@@ -310,15 +309,6 @@ backlink_intelligence/
 ├── relevance.py
 ├── reporting.py
 └── safety.py
-```
-
-## Docker
-
-Build and run the CLI without installing Python packages into your host environment:
-
-```bash
-docker build -t backlink-intelligence .
-docker run --rm backlink-intelligence --help
 ```
 
 ## Contributing

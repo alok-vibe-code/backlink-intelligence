@@ -8,24 +8,26 @@ Use GitHub's private vulnerability reporting feature when enabled for this repos
 
 ## Security model
 
-Backlink Intelligence processes URLs supplied by users. Network-enabled functionality therefore treats URL fetching as security-sensitive.
+Backlink Intelligence is expected to process URLs supplied by users. Network-enabled releases therefore treat URL fetching as security-sensitive functionality.
 
-The v1 fetcher blocks or bounds, at minimum:
+Future implementations should protect against, at minimum:
 
-- unsupported schemes,
-- credentials embedded in URLs,
-- localhost and common local hostnames,
-- private, loopback, link-local, reserved, multicast, and unspecified IP ranges,
-- DNS resolution to non-public addresses,
-- redirects to non-public addresses,
+- localhost and loopback targets,
+- private and link-local IP ranges,
+- cloud metadata endpoints,
+- DNS rebinding and redirect-to-private-network behavior,
 - excessive redirect chains,
 - oversized responses,
-- unexpectedly slow endpoints through request timeouts,
-- and non-HTML content.
+- decompression bombs,
+- unexpectedly slow endpoints,
+- unsupported schemes,
+- unsafe local file paths,
+- use as a generic open proxy,
+- and uncontrolled concurrency during bulk analysis.
 
 ## Hosted deployment warning
 
-A command-line tool that fetches user-supplied URLs and an internet-facing web service have different risk profiles. Do not expose the crawler as a public web endpoint without additional validation, centralized rate limiting, caching, abuse prevention, request isolation, logging, and SSRF defenses.
+A command-line tool that fetches user-supplied URLs and an internet-facing web service have different risk profiles. Do not expose the crawler as a public web endpoint without additional validation, rate limiting, abuse prevention, request isolation, and SSRF defenses.
 
 ## Secrets
 
