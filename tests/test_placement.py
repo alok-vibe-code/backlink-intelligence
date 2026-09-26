@@ -157,8 +157,8 @@ class PlacementTests(unittest.TestCase):
         item = rank_placements(source, target, "ai in finance course", "https://t.com/course", top_n=1)[0]
 
         expected = (
-            "Financial Agents now perform Continuous Accounting, one of the practical "
-            "applications professionals can examine more deeply through an ai in finance course. "
+            "Financial Agents now perform Continuous Accounting, a practical application "
+            "that can be examined more deeply through an ai in finance course. "
             "Instead of waiting for month-end, agents monitor every transaction in real time across global entities."
         )
         self.assertEqual(item.after_text, expected)
@@ -187,7 +187,7 @@ class PlacementTests(unittest.TestCase):
         self.assertIn('"continuous accounting"', item.after_text)
         self.assertIn("14 entities", item.after_text)
         self.assertEqual(
-            item.after_text.count("one of the practical applications professionals can examine more deeply"),
+            item.after_text.count("a practical application that can be examined more deeply"),
             1,
         )
         self.assertGreaterEqual(item.preservation_percent, 99.0)
@@ -207,6 +207,8 @@ class PlacementTests(unittest.TestCase):
         self.assertTrue(item.after_text.startswith(source.paragraphs[0]))
         self.assertNotIn("source_sentence_lightly_rewritten", item.reasons)
         self.assertNotIn("Readers who want additional context", item.after_text)
+        self.assertIn("Finance professionals can examine", item.after_text)
+        self.assertIn("target_audience_used_for_contextual_sentence", item.reasons)
         self.assertEqual(item.preservation_percent, 100.0)
 
     def test_segments_reconstruct_rewrite_and_contain_one_safe_link(self):
@@ -256,7 +258,130 @@ class PlacementTests(unittest.TestCase):
         )
         item = rank_placements(source, target, "ai in finance course", "https://t.com", top_n=1)[0]
         self.assertNotIn(" ,", item.after_text)
-        self.assertIn("operations, one of the practical applications", item.after_text)
+        self.assertIn("operations, a practical application", item.after_text)
+
+    def test_learning_rewrite_uses_explicit_student_audience(self):
+        source = parse_page(
+            """<main><p>Financial agents support continuous accounting and transaction monitoring across connected business systems, regional teams, and carefully governed reporting workflows.</p></main>""",
+            requested_url="https://s.com", final_url="https://s.com", status_code=200,
+        )
+        target = parse_page(
+            """<title>AI in Finance Course for Students</title><h1>Finance AI Applications</h1><p>Study financial agents, continuous accounting, and transaction monitoring.</p>""",
+            requested_url="https://t.com/course", final_url="https://t.com/course", status_code=200,
+        )
+        item = rank_placements(source, target, "ai in finance course", "https://t.com/course", top_n=1)[0]
+
+        self.assertIn("a practical application students can examine more deeply", item.after_text)
+        self.assertNotIn("professionals", item.after_text.casefold())
+        self.assertIn("target_audience_used_for_contextual_sentence", item.reasons)
+
+    def test_learning_rewrite_uses_other_explicit_target_audiences(self):
+        source = parse_page(
+            """<main><p>Financial agents support continuous accounting and transaction monitoring across connected business systems, regional teams, and carefully governed reporting workflows.</p></main>""",
+            requested_url="https://s.com", final_url="https://s.com", status_code=200,
+        )
+        for audience, expected in (
+            ("Developers", "developers can examine"),
+            ("Marketers", "marketers can examine"),
+            ("Executives", "executives can examine"),
+        ):
+            with self.subTest(audience=audience):
+                target = parse_page(
+                    f"""<title>AI in Finance Course for {audience}</title><h1>Finance AI Applications</h1><p>Study financial agents, continuous accounting, and transaction monitoring.</p>""",
+                    requested_url="https://t.com/course", final_url="https://t.com/course", status_code=200,
+                )
+                item = rank_placements(source, target, "ai in finance course", "https://t.com/course", top_n=1)[0]
+                self.assertIn(expected, item.after_text)
+                self.assertIn("target_audience_used_for_contextual_sentence", item.reasons)
+
+    def test_learning_rewrite_uses_neutral_wording_without_explicit_audience(self):
+        source = parse_page(
+            """<main><p>Financial agents support continuous accounting and transaction monitoring across connected business systems, regional teams, and carefully governed reporting workflows.</p></main>""",
+            requested_url="https://s.com", final_url="https://s.com", status_code=200,
+        )
+        target = parse_page(
+            """<title>AI in Finance Course</title><h1>Finance AI Applications</h1><p>Study financial agents, continuous accounting, and transaction monitoring.</p>""",
+            requested_url="https://t.com/course", final_url="https://t.com/course", status_code=200,
+        )
+        item = rank_placements(source, target, "ai in finance course", "https://t.com/course", top_n=1)[0]
+
+        self.assertIn("a practical application that can be examined more deeply", item.after_text)
+        self.assertNotIn("professionals", item.after_text.casefold())
+        self.assertIn("neutral_audience_wording_used", item.reasons)
+
+    def test_passing_audience_mention_does_not_define_target_audience(self):
+        source = parse_page(
+            """<main><p>Financial agents support continuous accounting and transaction monitoring across connected business systems, regional teams, and carefully governed reporting workflows.</p></main>""",
+            requested_url="https://s.com", final_url="https://s.com", status_code=200,
+        )
+        target = parse_page(
+            """<title>AI in Finance Course</title><h1>Finance AI Applications</h1><p>The course covers transaction monitoring. Professionals frequently discuss automation adoption in industry surveys.</p>""",
+            requested_url="https://t.com/course", final_url="https://t.com/course", status_code=200,
+        )
+        item = rank_placements(source, target, "ai in finance course", "https://t.com/course", top_n=1)[0]
+
+        self.assertIn("a practical application that can be examined more deeply", item.after_text)
+        self.assertNotIn("professionals can", item.after_text.casefold())
+        self.assertIn("neutral_audience_wording_used", item.reasons)
+
+    def test_guide_is_not_treated_as_a_course(self):
+        source = parse_page(
+            """<main><p>Marketing teams review campaign performance, attribution patterns, audience behavior, conversion data, reporting limitations, and channel results before changing their customer acquisition strategy.</p></main>""",
+            requested_url="https://s.com", final_url="https://s.com", status_code=200,
+        )
+        target = parse_page(
+            """<title>Marketing Attribution Guide</title><h1>Attribution Models Explained</h1><p>This article compares measurement approaches and reporting limitations.</p>""",
+            requested_url="https://t.com/guides/attribution", final_url="https://t.com/guides/attribution", status_code=200,
+        )
+        item = rank_placements(source, target, "marketing attribution guide", "https://t.com/guides/attribution", top_n=1)[0]
+
+        self.assertNotIn("professionals", item.after_text.casefold())
+        self.assertNotIn("course", item.after_text.casefold())
+        self.assertIn("neutral_audience_wording_used", item.reasons)
+
+    def test_service_target_uses_implementation_wording_not_course_audience(self):
+        source = parse_page(
+            """<main><p>Operations teams integrate automated workflows across connected systems to route approvals, monitor exceptions, and coordinate reliable execution throughout complex business processes.</p></main>""",
+            requested_url="https://s.com", final_url="https://s.com", status_code=200,
+        )
+        target = parse_page(
+            """<title>Workflow Automation Software Platform</title><h1>Connected Workflow Automation</h1><p>Integrate business systems, automate approvals, monitor exceptions, and deploy reliable operational workflows.</p>""",
+            requested_url="https://t.com/products/workflow-automation", final_url="https://t.com/products/workflow-automation", status_code=200,
+        )
+        item = rank_placements(source, target, "workflow automation platform", "https://t.com/products/workflow-automation", top_n=1)[0]
+
+        self.assertIn("an approach that can be explored further", item.after_text)
+        self.assertNotIn("professionals", item.after_text.casefold())
+        self.assertNotIn("course", item.after_text.casefold())
+
+    def test_course_url_cannot_override_clear_pricing_page_evidence(self):
+        source = parse_page(
+            """<main><p>AI automation costs vary according to integrations, transaction volume, operational support, infrastructure requirements, and the expected return on investment.</p></main>""",
+            requested_url="https://s.com", final_url="https://s.com", status_code=200,
+        )
+        target = parse_page(
+            """<title>AI Platform Pricing and TCO</title><h1>Plans and Pricing</h1><p>Compare implementation costs, operating expenses, plans, and expected ROI.</p>""",
+            requested_url="https://t.com/course", final_url="https://t.com/course", status_code=200,
+        )
+        item = rank_placements(source, target, "AI platform pricing", "https://t.com/course", top_n=1)[0]
+
+        self.assertIn("implementation costs", item.after_text)
+        self.assertNotIn("professionals", item.after_text.casefold())
+        self.assertNotIn("studied more deeply", item.after_text)
+
+    def test_course_url_supports_ambiguous_on_page_copy_without_guessing_audience(self):
+        source = parse_page(
+            """<main><p>Financial agents support continuous accounting and transaction monitoring across connected business systems, regional teams, and carefully governed reporting workflows.</p></main>""",
+            requested_url="https://s.com", final_url="https://s.com", status_code=200,
+        )
+        target = parse_page(
+            """<title>Applied Finance AI</title><h1>Financial Agent Applications</h1><p>Continuous accounting, transaction monitoring, and reporting workflows.</p>""",
+            requested_url="https://t.com/education/course/finance-ai", final_url="https://t.com/education/course/finance-ai", status_code=200,
+        )
+        item = rank_placements(source, target, "finance AI education", "https://t.com/education/course/finance-ai", top_n=1)[0]
+
+        self.assertIn("a practical application that can be examined more deeply", item.after_text)
+        self.assertNotIn("professionals", item.after_text.casefold())
 
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 import re
+from urllib.parse import unquote, urlsplit
 
 from .fetcher import FetchConfig, fetch_page
 from .models import PageEvidence, PlacementSuggestion, TextSegment
@@ -116,17 +117,121 @@ def _target_profile(target: PageEvidence) -> str:
     return " ".join([target.title, target.h1, *target.headings, target.text[:12000]])
 
 
+_TARGET_TYPE_SIGNALS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("cost", ("cost", "pricing", "price", "prices", "tco", "roi", "plans")),
+    (
+        "learning",
+        (
+            "course",
+            "courses",
+            "training",
+            "curriculum",
+            "certificate",
+            "certification",
+            "bootcamp",
+            "class",
+            "classes",
+            "learning program",
+            "degree program",
+        ),
+    ),
+    (
+        "service",
+        ("service", "services", "consulting", "agency", "platform", "software", "product", "solution", "solutions"),
+    ),
+    ("implementation", ("implementation", "integration", "deployment", "development solution")),
+    ("governance", ("risk", "governance", "compliance", "security", "privacy", "audit")),
+    ("guide", ("guide", "article", "research", "report", "tutorial", "handbook", "resource", "roadmap")),
+)
+
+
+_TARGET_AUDIENCES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("finance professionals", ("finance professionals", "financial professionals")),
+    ("marketing professionals", ("marketing professionals",)),
+    ("SEO professionals", ("seo professionals",)),
+    ("working professionals", ("working professionals",)),
+    ("business leaders", ("business leaders",)),
+    ("finance teams", ("finance teams",)),
+    ("marketing teams", ("marketing teams",)),
+    ("software developers", ("software developers",)),
+    ("developers", ("developers",)),
+    ("marketers", ("marketers",)),
+    ("executives", ("executives",)),
+    ("students", ("students",)),
+    ("learners", ("learners",)),
+    ("researchers", ("researchers",)),
+    ("educators", ("educators",)),
+    ("professionals", ("professionals",)),
+)
+
+
+def _contains_term(text: str, term: str) -> bool:
+    return re.search(rf"(?<!\w){re.escape(term)}(?!\w)", text, flags=re.IGNORECASE) is not None
+
+
+def _target_url_text(target: PageEvidence) -> str:
+    url = target.final_url or target.requested_url
+    path = unquote(urlsplit(url).path)
+    return re.sub(r"[-_/]+", " ", path).casefold()
+
+
 def _target_intent(target: PageEvidence) -> str:
-    profile = _target_profile(target).casefold()
-    if any(term in profile for term in ("cost", "pricing", "price", "tco", "roi")):
-        return "cost"
-    if any(term in profile for term in ("course", "learning", "training", "curriculum", "roadmap", "guide")):
-        return "learning"
-    if any(term in profile for term in ("implementation", "service", "consulting", "solution")):
-        return "implementation"
-    if any(term in profile for term in ("risk", "governance", "compliance", "security")):
-        return "governance"
-    return "general"
+    """Classify the destination while keeping URL words as supporting evidence only."""
+    primary = " ".join([target.title, target.h1, *target.headings[:12]]).casefold()
+    body = target.text[:12000].casefold()
+    url_text = _target_url_text(target)
+    ranked: list[tuple[float, int, str]] = []
+    for priority, (kind, signals) in enumerate(_TARGET_TYPE_SIGNALS):
+        primary_hits = sum(_contains_term(primary, term) for term in signals)
+        body_hits = sum(_contains_term(body, term) for term in signals)
+        url_hits = sum(_contains_term(url_text, term) for term in signals)
+        # Page copy is authoritative. A URL clue can break a close tie or classify an
+        # otherwise ambiguous page, but cannot overrule clear on-page evidence.
+        score = (5.0 * primary_hits) + (1.5 * body_hits) + (0.5 * url_hits)
+        ranked.append((score, -priority, kind))
+    score, _, kind = max(ranked)
+    return kind if score > 0 else "general"
+
+
+def _target_audience(target: PageEvidence) -> str | None:
+    """Return an audience only when the destination explicitly identifies one."""
+    primary = " ".join([target.title, target.h1])
+    profile = _target_profile(target)
+    cues = (
+        "for",
+        "designed for",
+        "built for",
+        "created for",
+        "developed for",
+        "intended for",
+        "ideal for",
+        "suitable for",
+        "aimed at",
+        "who should attend",
+        "who is this for",
+        "helps",
+        "supports",
+    )
+    for audience, variants in _TARGET_AUDIENCES:
+        for variant in variants:
+            # An audience in a title or heading is an explicit positioning signal.
+            if _contains_term(primary, variant):
+                return audience
+            # In body copy, require audience-directed language so a passing mention
+            # does not become an unsupported claim about whom the page serves.
+            cue_pattern = "|".join(re.escape(cue) for cue in cues)
+            if re.search(
+                rf"(?:{cue_pattern})\s+(?:aspiring\s+|experienced\s+|current\s+|future\s+)?{re.escape(variant)}(?!\w)",
+                profile,
+                flags=re.IGNORECASE,
+            ):
+                return audience
+    return None
+
+
+def _audience_subject(audience: str) -> str:
+    """Uppercase a sentence-initial audience without damaging acronyms such as SEO."""
+    return audience[:1].upper() + audience[1:]
 
 
 def _context_kind(text: str) -> str:
@@ -166,7 +271,8 @@ def _rewrite_candidate(
     target: PageEvidence,
 ) -> tuple[str, str, list[TextSegment], str, list[str]] | None:
     """Integrate an anchor into one supported sentence without replacing source words."""
-    if _target_intent(target) != "learning":
+    intent = _target_intent(target)
+    if intent not in {"learning", "service", "implementation", "guide", "governance"}:
         return None
 
     ranked: list[tuple[int, float, int, int, str]] = []
@@ -190,12 +296,21 @@ def _rewrite_candidate(
     linked_phrase = _anchor_with_article(placed_anchor)
     anchor_offset = linked_phrase.rfind(placed_anchor)
     article_prefix = linked_phrase[:anchor_offset]
-    if kind == "application":
-        clause = ", one of the practical applications professionals can examine more deeply through "
-    elif kind == "skills":
-        clause = ", a topic professionals can study more deeply through "
+    audience = _target_audience(target)
+    if intent == "learning" and kind == "application":
+        descriptor, active, passive = "a practical application", "examine more deeply", "examined more deeply"
+    elif intent == "learning" and kind == "skills":
+        descriptor, active, passive = "a topic", "study more deeply", "studied more deeply"
+    elif intent in {"service", "implementation"}:
+        descriptor, active, passive = "an approach", "explore further", "explored further"
+    elif intent == "governance":
+        descriptor, active, passive = "a consideration", "examine further", "examined further"
     else:
-        clause = ", an approach teams can explore further through "
+        descriptor, active, passive = "a topic", "explore further", "explored further"
+    if audience:
+        clause = f", {descriptor} {audience} can {active} through "
+    else:
+        clause = f", {descriptor} that can be {passive} through "
 
     prefix = paragraph[:start] + sentence_body + clause + article_prefix
     suffix = terminal + sentence[len(stripped) :] + paragraph[end:]
@@ -207,6 +322,11 @@ def _rewrite_candidate(
         "target_title_not_injected_into_source_copy",
         "destination_intent_used_for_contextual_sentence",
     ]
+    notes.append(
+        "target_audience_used_for_contextual_sentence"
+        if audience
+        else "neutral_audience_wording_used"
+    )
     if placed_anchor != anchor:
         notes.append("anchor_casing_adapted_for_generated_sentence")
     return after, after_text, _segments(prefix, placed_anchor, target_url, suffix), placed_anchor, notes
@@ -220,6 +340,7 @@ def _contextual_fallback_sentence(
     """Create concise deterministic fallback copy without dumping the target title."""
     placed_anchor = _fallback_anchor_case(anchor)
     intent = _target_intent(target)
+    audience = _target_audience(target)
     context = _context_kind(paragraph)
     paragraph_lower = paragraph.lower()
 
@@ -231,7 +352,7 @@ def _contextual_fallback_sentence(
         notes.append("anchor_casing_adapted_for_generated_sentence")
 
     if cost_intent and cost_context:
-        notes.append("destination_intent_used_for_contextual_sentence")
+        notes.extend(["destination_intent_used_for_contextual_sentence", "neutral_audience_wording_used"])
         return (
             "These factors are useful when estimating ",
             " implementation costs, ongoing operating expenses, and expected ROI.",
@@ -240,9 +361,9 @@ def _contextual_fallback_sentence(
         )
 
     if cost_intent:
-        notes.append("destination_intent_used_for_contextual_sentence")
+        notes.extend(["destination_intent_used_for_contextual_sentence", "neutral_audience_wording_used"])
         return (
-            "Businesses evaluating this type of automation should also account for ",
+            "Evaluating this type of automation requires accounting for ",
             " costs, including implementation, integrations, ongoing operation, and expected ROI.",
             placed_anchor,
             notes,
@@ -252,48 +373,90 @@ def _contextual_fallback_sentence(
     anchor_offset = anchor_phrase.rfind(placed_anchor)
     article_prefix = anchor_phrase[:anchor_offset]
     if intent == "learning" and context == "application":
+        notes.append("destination_intent_used_for_contextual_sentence")
+        if audience:
+            notes.append("target_audience_used_for_contextual_sentence")
+            return (
+                f"{_audience_subject(audience)} can examine these applications more deeply through {article_prefix}",
+                ".",
+                placed_anchor,
+                notes,
+            )
+        notes.append("neutral_audience_wording_used")
         return (
-            f"Professionals interested in understanding these applications more deeply can also explore {article_prefix}",
+            f"These applications can be examined more deeply through {article_prefix}",
             ".",
             placed_anchor,
             notes,
         )
 
     if intent == "learning" and context == "skills":
+        notes.append("destination_intent_used_for_contextual_sentence")
+        if audience:
+            notes.append("target_audience_used_for_contextual_sentence")
+            return (
+                f"{_audience_subject(audience)} can develop these skills further through {article_prefix}",
+                ".",
+                placed_anchor,
+                notes,
+            )
+        notes.append("neutral_audience_wording_used")
         return (
-            f"Professionals looking to develop these skills can explore {article_prefix}",
+            f"These skills can be developed further through {article_prefix}",
             ".",
             placed_anchor,
             notes,
         )
 
     if intent == "learning":
+        notes.append("destination_intent_used_for_contextual_sentence")
+        if audience:
+            notes.append("target_audience_used_for_contextual_sentence")
+            return (
+                f"{_audience_subject(audience)} can explore this subject further through {article_prefix}",
+                ".",
+                placed_anchor,
+                notes,
+            )
+        notes.append("neutral_audience_wording_used")
         return (
-            f"Teams applying these ideas can use {article_prefix}",
-            " as a structured next step.",
+            f"This subject can be explored further through {article_prefix}",
+            ".",
             placed_anchor,
             notes,
         )
 
-    if intent == "implementation":
+    if intent in {"service", "implementation"}:
+        notes.extend(["destination_intent_used_for_contextual_sentence", "neutral_audience_wording_used"])
         return (
-            "Teams evaluating similar approaches can explore ",
-            " for practical implementation guidance.",
+            f"Practical implementation guidance for similar approaches is available through {article_prefix}",
+            ".",
             placed_anchor,
             notes,
         )
 
     if intent == "governance":
+        notes.extend(["destination_intent_used_for_contextual_sentence", "neutral_audience_wording_used"])
         return (
-            "Teams assessing the related safeguards can consult ",
-            " for additional governance context.",
+            f"The related safeguards can be examined further through {article_prefix}",
+            ".",
             placed_anchor,
             notes,
         )
 
+    if intent == "guide":
+        notes.extend(["destination_intent_used_for_contextual_sentence", "neutral_audience_wording_used"])
+        return (
+            f"Additional guidance on this topic is available through {article_prefix}",
+            ".",
+            placed_anchor,
+            notes,
+        )
+
+    notes.append("neutral_audience_wording_used")
     return (
-        "For teams evaluating similar approaches, ",
-        " offers a useful point of reference.",
+        f"An additional point of reference is available through {article_prefix}",
+        ".",
         placed_anchor,
         notes,
     )
