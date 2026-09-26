@@ -184,6 +184,7 @@ def _rewrite_candidate(
     stripped = sentence.rstrip()
     terminal = stripped[-1] if stripped and stripped[-1] in ".!?" else "."
     sentence_body = stripped[:-1] if stripped and stripped[-1] in ".!?" else stripped
+    sentence_body = sentence_body.rstrip()
 
     placed_anchor = _fallback_anchor_case(anchor)
     linked_phrase = _anchor_with_article(placed_anchor)

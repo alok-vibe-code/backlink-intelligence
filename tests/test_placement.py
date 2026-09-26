@@ -245,6 +245,19 @@ class PlacementTests(unittest.TestCase):
         second = rank_placements(source, target, "ai in finance course", "https://t.com", top_n=1)[0]
         self.assertEqual(first.to_dict(), second.to_dict())
 
+    def test_rewrite_normalizes_space_before_terminal_punctuation(self):
+        source = parse_page(
+            """<main><p>Financial agents monitor transactions and support continuous accounting across connected global finance operations . Teams review exceptions before reports are finalized.</p></main>""",
+            requested_url="https://s.com", final_url="https://s.com", status_code=200,
+        )
+        target = parse_page(
+            """<title>AI in Finance Course</title><h1>Finance AI Applications</h1><p>Study financial agents, continuous accounting, and transaction monitoring.</p>""",
+            requested_url="https://t.com", final_url="https://t.com", status_code=200,
+        )
+        item = rank_placements(source, target, "ai in finance course", "https://t.com", top_n=1)[0]
+        self.assertNotIn(" ,", item.after_text)
+        self.assertIn("operations, one of the practical applications", item.after_text)
+
 
 
 if __name__ == "__main__":
