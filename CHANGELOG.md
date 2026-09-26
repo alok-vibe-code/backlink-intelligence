@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.4 - 2026-09-26
+
+- Replace the repeated learning-placement clause with sentence-function-aware copy.
+- Use distinct deterministic wording for definitions, requirements, workflows, benefits, skills, and general context.
+- Introduce target audiences only when the source paragraph addresses the same audience.
+- Avoid unsafe rewrites of long, definitional, or evaluation-focused sentences.
+- Diversify ranked opportunities while preserving deterministic output and API compatibility.
+
 ## 1.1.3 - 2026-09-26
 
 - Removed navigation, sidebar, footer, and repeated promotional copy from page evidence.

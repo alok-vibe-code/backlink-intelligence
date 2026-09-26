@@ -316,11 +316,6 @@ def _target_audience(target: PageEvidence) -> str | None:
     return None
 
 
-def _audience_subject(audience: str) -> str:
-    """Uppercase a sentence-initial audience without damaging acronyms such as SEO."""
-    return audience[:1].upper() + audience[1:]
-
-
 def _context_kind(text: str) -> str:
     lower = text.casefold()
     groups = (
@@ -334,6 +329,78 @@ def _context_kind(text: str) -> str:
         if any(marker in lower for marker in markers):
             return kind
     return "general"
+
+
+def _sentence_function(text: str) -> str:
+    """Classify what the publisher's sentence is doing, not merely its topic.
+
+    This deliberately runs before broad topical markers such as ``agent``.  The old
+    composer treated nearly every AI-agent sentence as an application and attached
+    the same ``a practical application ...`` clause, even to definitions and
+    evaluation criteria.
+    """
+    lower = " ".join(text.casefold().split())
+    groups = (
+        (
+            "requirement",
+            (
+                " should ",
+                " must ",
+                " requires ",
+                " require ",
+                " needs ",
+                " need ",
+                "choosing ",
+                "evaluating ",
+                "consider ",
+                "criteria",
+                "right ",
+            ),
+        ),
+        (
+            "definition",
+            (
+                " is an ",
+                " is a ",
+                " are an ",
+                " are a ",
+                "refers to",
+                "means ",
+                "defined as",
+            ),
+        ),
+        (
+            "workflow",
+            (
+                "workflow",
+                "process",
+                "step",
+                "retrieve",
+                "monitor",
+                "coordinate",
+                "route",
+                "interpret",
+            ),
+        ),
+        (
+            "benefit",
+            ("benefit", "outcome", "improve", "reduce", "increase", "enable", "support"),
+        ),
+        (
+            "application",
+            ("application", "use case", "in practice", "perform", "automate", "apply"),
+        ),
+    )
+    padded = f" {lower} "
+    for function, markers in groups:
+        if any(marker in padded for marker in markers):
+            return function
+    return "general"
+
+
+def _audience_fits_source(audience: str | None, paragraph: str) -> bool:
+    """Do not introduce an audience label that the publisher did not address."""
+    return bool(audience and _contains_term(paragraph, audience))
 
 
 def _sentence_spans(paragraph: str) -> list[tuple[int, int, str]]:
@@ -356,6 +423,7 @@ def _rewrite_candidate(
     anchor: str,
     target_url: str,
     target: PageEvidence,
+    variant: int = 0,
 ) -> tuple[str, str, list[TextSegment], str, list[str]] | None:
     """Integrate an anchor into one supported sentence without replacing source words."""
     intent = _target_intent(target)
@@ -366,9 +434,16 @@ def _rewrite_candidate(
     for start, end, sentence in _sentence_spans(paragraph):
         overlap = _meaningful_overlap(sentence, target, anchor)
         kind = _context_kind(sentence)
-        if overlap < 2 or kind not in {"application", "skills", "implementation"}:
+        function = _sentence_function(sentence)
+        if (
+            overlap < 2
+            or start != 0
+            or len(sentence.split()) > 18
+            or kind not in {"application", "skills", "implementation"}
+            or function in {"definition", "requirement"}
+        ):
             continue
-        ranked.append((overlap, similarity(sentence, _target_profile(target)), start, end, kind))
+        ranked.append((overlap, similarity(sentence, _target_profile(target)), start, end, function))
     if not ranked:
         return None
 
@@ -385,7 +460,7 @@ def _rewrite_candidate(
     article_prefix = linked_phrase[:anchor_offset]
     audience = _target_audience(target)
     if intent == "learning" and kind == "application":
-        descriptor, active, passive = "a practical application", "examine more deeply", "examined more deeply"
+        descriptor, active, passive = "an application", "examine in greater depth", "examined in greater depth"
     elif intent == "learning" and kind == "skills":
         descriptor, active, passive = "a topic", "study more deeply", "studied more deeply"
     elif intent in {"service", "implementation"}:
@@ -394,10 +469,18 @@ def _rewrite_candidate(
         descriptor, active, passive = "a consideration", "examine further", "examined further"
     else:
         descriptor, active, passive = "a topic", "explore further", "explored further"
-    if audience:
-        clause = f", {descriptor} {audience} can {active} through "
+    # Audience labels are not grammatical decorations.  They are used only when the
+    # publisher already addresses the same audience; otherwise neutral copy is safer.
+    use_audience = _audience_fits_source(audience, paragraph)
+    neutral_clauses = (
+        f", {descriptor} {passive} through ",
+        f", an example explored in greater depth through ",
+        f", a related concept covered in ",
+    )
+    if use_audience:
+        clause = f", {descriptor} that {audience} can {active} through "
     else:
-        clause = f", {descriptor} that can be {passive} through "
+        clause = neutral_clauses[variant % len(neutral_clauses)]
 
     prefix = paragraph[:start] + sentence_body + clause + article_prefix
     suffix = terminal + sentence[len(stripped) :] + paragraph[end:]
@@ -411,7 +494,7 @@ def _rewrite_candidate(
     ]
     notes.append(
         "target_audience_used_for_contextual_sentence"
-        if audience
+        if use_audience
         else "neutral_audience_wording_used"
     )
     if placed_anchor != anchor:
@@ -423,12 +506,14 @@ def _contextual_fallback_sentence(
     paragraph: str,
     anchor: str,
     target: PageEvidence,
+    variant: int = 0,
 ) -> tuple[str, str, str, list[str]]:
     """Create concise deterministic fallback copy without dumping the target title."""
     placed_anchor = _fallback_anchor_case(anchor)
     intent = _target_intent(target)
     audience = _target_audience(target)
     context = _context_kind(paragraph)
+    function = _sentence_function(paragraph)
     paragraph_lower = paragraph.lower()
 
     cost_intent = intent == "cost"
@@ -459,56 +544,100 @@ def _contextual_fallback_sentence(
     anchor_phrase = _anchor_with_article(placed_anchor)
     anchor_offset = anchor_phrase.rfind(placed_anchor)
     article_prefix = anchor_phrase[:anchor_offset]
-    if intent == "learning" and context == "application":
-        notes.append("destination_intent_used_for_contextual_sentence")
-        if audience:
-            notes.append("target_audience_used_for_contextual_sentence")
-            return (
-                f"{_audience_subject(audience)} can examine these applications more deeply through {article_prefix}",
-                ".",
-                placed_anchor,
-                notes,
-            )
-        notes.append("neutral_audience_wording_used")
-        return (
-            f"These applications can be examined more deeply through {article_prefix}",
-            ".",
-            placed_anchor,
-            notes,
-        )
-
-    if intent == "learning" and context == "skills":
-        notes.append("destination_intent_used_for_contextual_sentence")
-        if audience:
-            notes.append("target_audience_used_for_contextual_sentence")
-            return (
-                f"{_audience_subject(audience)} can develop these skills further through {article_prefix}",
-                ".",
-                placed_anchor,
-                notes,
-            )
-        notes.append("neutral_audience_wording_used")
-        return (
-            f"These skills can be developed further through {article_prefix}",
-            ".",
-            placed_anchor,
-            notes,
-        )
+    sentence_article_prefix = article_prefix[:1].upper() + article_prefix[1:]
+    use_audience = _audience_fits_source(audience, paragraph)
 
     if intent == "learning":
         notes.append("destination_intent_used_for_contextual_sentence")
-        if audience:
+        if use_audience:
             notes.append("target_audience_used_for_contextual_sentence")
             return (
-                f"{_audience_subject(audience)} can explore this subject further through {article_prefix}",
-                ".",
+                f"For {audience}, {article_prefix}",
+                " provides a structured way to explore this subject in greater depth.",
                 placed_anchor,
                 notes,
             )
+
         notes.append("neutral_audience_wording_used")
+        if function == "definition":
+            options = (
+                (
+                    f"{sentence_article_prefix}",
+                    " can provide additional context for how this technology works in practice.",
+                ),
+                (
+                    "The role of this technology in agent systems can be explored further through " + article_prefix,
+                    ".",
+                ),
+                (
+                    f"{sentence_article_prefix}",
+                    " can help connect this definition with practical agent workflows.",
+                ),
+            )
+        elif function == "requirement":
+            options = (
+                (
+                    f"{sentence_article_prefix}",
+                    " can provide additional context for evaluating these requirements in practice.",
+                ),
+                (
+                    "These criteria can also be examined through " + article_prefix,
+                    ".",
+                ),
+                (
+                    f"{sentence_article_prefix}",
+                    " can help explain how these considerations affect real-world agent systems.",
+                ),
+            )
+        elif function == "workflow" or context == "implementation":
+            options = (
+                (
+                    f"{sentence_article_prefix}",
+                    " can help explain how these workflows are designed and applied.",
+                ),
+                (
+                    "These workflows can be studied in greater depth through " + article_prefix,
+                    ".",
+                ),
+                (
+                    f"{sentence_article_prefix}",
+                    " offers a structured way to explore the methods behind these workflows.",
+                ),
+            )
+        elif function == "benefit":
+            options = (
+                (
+                    "The methods behind these outcomes can be studied further through " + article_prefix,
+                    ".",
+                ),
+                (
+                    f"{sentence_article_prefix}",
+                    " can provide additional context for understanding these outcomes.",
+                ),
+                (
+                    "The concepts supporting these benefits can be explored through " + article_prefix,
+                    ".",
+                ),
+            )
+        elif context == "skills":
+            options = (
+                ("These skills can be developed further through " + article_prefix, "."),
+                (f"{sentence_article_prefix}", " can provide a structured path for developing these skills."),
+                ("A deeper treatment of these capabilities is available through " + article_prefix, "."),
+            )
+        else:
+            options = (
+                (
+                    f"{sentence_article_prefix}",
+                    " can provide a structured way to explore how these concepts work in practice.",
+                ),
+                ("These concepts can be examined in greater depth through " + article_prefix, "."),
+                (f"{sentence_article_prefix}", " offers additional context for applying these ideas."),
+            )
+        sentence_prefix, sentence_suffix = options[variant % len(options)]
         return (
-            f"This subject can be explored further through {article_prefix}",
-            ".",
+            sentence_prefix,
+            sentence_suffix,
             placed_anchor,
             notes,
         )
@@ -564,6 +693,7 @@ def _compose_after(
     anchor: str,
     target_url: str,
     target: PageEvidence,
+    variant: int = 0,
 ) -> tuple[str, str, str, list[TextSegment], str, list[str]]:
     """Compose the draft while preserving source grammar/capitalization when possible."""
     exact = _find_complete_phrase(paragraph, anchor)
@@ -582,8 +712,8 @@ def _compose_after(
 
     # If the exact requested form is not present, prefer a complete natural word-form
     # already in the publisher copy instead of creating artifacts such as [AI Agent]s.
-    for variant in _simple_anchor_variants(anchor):
-        match = _find_complete_phrase(paragraph, variant)
+    for anchor_variant in _simple_anchor_variants(anchor):
+        match = _find_complete_phrase(paragraph, anchor_variant)
         if match is not None:
             placed_anchor = match.group(0)
             linked = f"[{placed_anchor}]({target_url})"
@@ -601,13 +731,13 @@ def _compose_after(
                 ["anchor_adapted_to_source_grammar", "requested_anchor_not_used_verbatim"],
             )
 
-    rewrite = _rewrite_candidate(paragraph, anchor, target_url, target)
+    rewrite = _rewrite_candidate(paragraph, anchor, target_url, target, variant)
     if rewrite is not None:
         after, after_text, segments, placed_anchor, notes = rewrite
         return "contextual_sentence", after, after_text, segments, placed_anchor, notes
 
     sentence_prefix, sentence_suffix, placed_anchor, notes = _contextual_fallback_sentence(
-        paragraph, anchor, target
+        paragraph, anchor, target, variant
     )
     prefix = paragraph.rstrip() + " " + sentence_prefix
     after_text = prefix + placed_anchor + sentence_suffix
@@ -740,7 +870,7 @@ def rank_placements(
     suggestions: list[PlacementSuggestion] = []
     for rank, (score, destination_score, index, paragraph) in enumerate(candidates[: max(top_n, 1)], start=1):
         strategy, after, after_text, after_segments, placed_anchor, compose_notes = _compose_after(
-            paragraph, anchor, target_url, target
+            paragraph, anchor, target_url, target, rank - 1
         )
         original_words = max(len(paragraph.split()), 1)
         after_words = len(after_text.split())
