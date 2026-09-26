@@ -34,6 +34,8 @@ class EvidenceHTMLParser(HTMLParser):
         self._current_link: dict | None = None
         self._skip_depth = 0
         self._landmark_stack: list[str] = []
+        self._seen_headings: set[str] = set()
+        self._seen_paragraphs: set[str] = set()
 
     def _placement(self) -> str:
         landmarks = set(self._landmark_stack)
@@ -90,16 +92,28 @@ class EvidenceHTMLParser(HTMLParser):
             self._h1_depth -= 1
         if self._heading_tag == tag:
             text = clean_text(" ".join(self._heading_parts))
-            if text:
+            key = text.casefold()
+            if (
+                text
+                and self._placement() not in {"navigation", "sidebar", "footer"}
+                and key not in self._seen_headings
+            ):
                 self.headings.append(text)
+                self._seen_headings.add(key)
             self._heading_tag = None
             self._heading_parts = []
         if tag == "p" and self._paragraph_depth:
             self._paragraph_depth -= 1
             if self._paragraph_depth == 0:
                 text = clean_text(" ".join(self._paragraph_parts))
-                if text:
+                key = text.casefold()
+                if (
+                    text
+                    and self._placement() not in {"navigation", "sidebar", "footer"}
+                    and key not in self._seen_paragraphs
+                ):
                     self.paragraphs.append(text)
+                    self._seen_paragraphs.add(key)
                 self._paragraph_parts = []
         if tag == "a" and self._current_link is not None:
             text = clean_text(" ".join(self._current_link["text"]))
@@ -126,7 +140,7 @@ class EvidenceHTMLParser(HTMLParser):
             return
         if self._title_depth:
             self.title_parts.append(text)
-        if self._h1_depth:
+        if self._h1_depth and self._placement() not in {"navigation", "sidebar", "footer"}:
             self.h1_parts.append(text)
         if self._heading_tag:
             self._heading_parts.append(text)

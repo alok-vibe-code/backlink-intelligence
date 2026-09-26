@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.3 - 2026-09-26
+
+- Removed navigation, sidebar, footer, and repeated promotional copy from page evidence.
+- Added anchor-aware target profiles built from topical headings and substantive body copy.
+- Separated broad topic alignment from specialized destination-purpose evidence.
+- Allowed strong course-topic matches to return editorial-review opportunities without lowering beta thresholds.
+- Prevented table and list introductions from becoming malformed contextual rewrites.
+- Added regression coverage for the DelightChat and Great Learning AI-agent course case.
+
 ## 1.1.2 - 2026-09-26
 
 - Classify destination pages using on-page evidence with the final URL as a supporting signal.

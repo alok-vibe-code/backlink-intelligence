@@ -105,6 +105,79 @@ class PlacementTests(unittest.TestCase):
         for item in items[1:]:
             self.assertEqual(item.destination_fit, "low")
 
+    def test_delightchat_agent_article_matches_agentic_ai_course_despite_menu_noise(self):
+        source = parse_page(
+            """<title>Best Company Data APIs for AI Agents</title><main><article>
+            <p>The table below summarizes the main strengths of each provider and the AI agent use cases they are best suited for:</p>
+            <p>Choosing the right company data API for an AI agent requires more than comparing database size or the number of available fields. The API should provide reliable data in a format that autonomous workflows can retrieve, interpret, and use.</p>
+            <p>A company data API lets AI agents access structured business information such as firmographics, workforce data, funding, technologies, and company growth signals for research and automated decisions.</p>
+            </article></main>""",
+            requested_url="https://www.delightchat.io/blog/best-company-data-apis-for-ai-agents",
+            final_url="https://www.delightchat.io/blog/best-company-data-apis-for-ai-agents",
+            status_code=200,
+        )
+        target = parse_page(
+            """<title>Agentic AI Course with Certificate by IIT Bombay for Working Professionals</title>
+            <body><nav>
+            <h2>PG Program in Artificial Intelligence and Machine Learning</h2>
+            <p>Browse online degrees, certificates, bootcamps, and professional programs.</p>
+            <h2>Certificate Program in Data Science</h2>
+            <p>Browse online degrees, certificates, bootcamps, and professional programs.</p>
+            </nav><div class="main">
+            <h1>Certificate in Agentic AI</h1>
+            <h2>Hands-on Agentic AI Curriculum</h2>
+            <p>Learn to build autonomous AI agents that reason, act, and collaborate using retrieval augmented generation, Model Context Protocol, LangGraph, CrewAI, tools, memory, and orchestration.</p>
+            <h2>What will you learn to build and apply?</h2>
+            <p>Apply agentic AI techniques to real-world business use cases involving intelligent workflows, structured data, external tools, multi-agent systems, evaluation, and deployment.</p>
+            </div></body>""",
+            requested_url="https://www.mygreatlearning.com/iit-bombay-certificate-in-agentic-ai",
+            final_url="https://www.mygreatlearning.com/iit-bombay-certificate-in-agentic-ai",
+            status_code=200,
+        )
+        items = rank_placements(
+            source,
+            target,
+            "AI agent course",
+            target.final_url,
+            top_n=3,
+            min_context_score=0.15,
+            min_destination_score=0.08,
+        )
+        self.assertGreaterEqual(len(items), 1)
+        self.assertTrue(items[0].review_required)
+        self.assertEqual(items[0].recommendation_status, "manual_review")
+        self.assertIn("AI agent", items[0].before)
+        self.assertFalse(items[0].before.rstrip().endswith((':', ';')))
+        self.assertGreaterEqual(items[0].score, 0.15)
+        self.assertGreaterEqual(items[0].destination_score, 0.08)
+
+    def test_unrelated_course_does_not_pass_on_generic_course_language(self):
+        source = parse_page(
+            """<main><p>AI agents retrieve company data, coordinate tools, monitor business changes, and support automated research decisions across connected workflows.</p></main>""",
+            requested_url="https://source.example/ai-agents",
+            final_url="https://source.example/ai-agents",
+            status_code=200,
+        )
+        target = parse_page(
+            """<title>Professional Watercolor Painting Course</title><main>
+            <h1>Learn Watercolor Painting</h1>
+            <p>Study color mixing, brush control, paper selection, washes, composition, landscapes, and portrait painting through guided studio exercises.</p>
+            </main>""",
+            requested_url="https://target.example/watercolor-course",
+            final_url="https://target.example/watercolor-course",
+            status_code=200,
+        )
+        items = rank_placements(
+            source,
+            target,
+            "AI agent course",
+            target.final_url,
+            top_n=3,
+            min_context_score=0.15,
+            min_destination_score=0.08,
+        )
+        self.assertEqual(items, [])
+
 
     @patch("backlink_intelligence.placement.fetch_page")
     def test_contextual_sentence_avoids_target_title_dump(self, fetch):

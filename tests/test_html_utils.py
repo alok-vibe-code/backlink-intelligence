@@ -22,5 +22,27 @@ class HTMLTests(unittest.TestCase):
         target = next(l for l in self.page.links if "target.com" in l.href); self.assertEqual(target.text, "agentic AI course"); self.assertEqual(target.placement, "editorial_context"); self.assertIn("nofollow", target.rel)
         footer = next(l for l in self.page.links if "social.example" in l.href); self.assertEqual(footer.placement, "footer")
 
+    def test_navigation_sidebar_footer_and_duplicates_do_not_pollute_page_copy(self):
+        page = parse_page(
+            """<html><body>
+            <nav><h1>Navigation Heading</h1><h2>Repeated Course Menu</h2><p>Repeated promotional navigation copy.</p></nav>
+            <aside><h2>Related Programs</h2><p>Sidebar promotion for another course.</p></aside>
+            <main><h2>Agentic AI Curriculum</h2>
+            <p>Build autonomous AI agents with tools, retrieval, memory, and orchestration.</p>
+            <h2>Agentic AI Curriculum</h2>
+            <p>Build autonomous AI agents with tools, retrieval, memory, and orchestration.</p></main>
+            <footer><p>Footer promotional links and legal navigation.</p></footer>
+            </body></html>""",
+            requested_url="https://example.com/course",
+            final_url="https://example.com/course",
+            status_code=200,
+        )
+        self.assertEqual(page.headings, ["Agentic AI Curriculum"])
+        self.assertEqual(page.h1, "")
+        self.assertEqual(
+            page.paragraphs,
+            ["Build autonomous AI agents with tools, retrieval, memory, and orchestration."],
+        )
+
 
 if __name__ == "__main__": unittest.main()

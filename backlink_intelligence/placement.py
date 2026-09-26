@@ -113,8 +113,95 @@ def _anchor_with_article(anchor: str) -> str:
     return f"{article} {anchor}"
 
 
+_PROFILE_BOILERPLATE_TERMS = {
+    "academy",
+    "certificate",
+    "certification",
+    "class",
+    "course",
+    "department",
+    "degree",
+    "education",
+    "institute",
+    "learn",
+    "learning",
+    "online",
+    "offered",
+    "program",
+    "programme",
+    "professional",
+    "professionals",
+    "school",
+    "student",
+    "students",
+    "training",
+    "university",
+    "working",
+}
+
+
+def _unique_text(items: list[str]) -> list[str]:
+    output: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        value = " ".join(item.split()).strip()
+        key = value.casefold()
+        if value and key not in seen:
+            seen.add(key)
+            output.append(value)
+    return output
+
+
 def _target_profile(target: PageEvidence) -> str:
-    return " ".join([target.title, target.h1, *target.headings, target.text[:12000]])
+    """Return the full cleaned page profile used by composition classifiers."""
+    return " ".join(
+        _unique_text([target.title, target.h1, *target.headings, *target.paragraphs])
+    )[:12000]
+
+
+def _target_topic_evidence(target: PageEvidence, anchor: str) -> tuple[str, list[str]]:
+    """Build a compact topical profile without navigation or destination wrappers."""
+    url_text = _target_url_text(target)
+    boilerplate_terms = {_stem(term) for term in _PROFILE_BOILERPLATE_TERMS}
+    anchor_subject_terms = _stems(anchor) - boilerplate_terms
+    fallback_seed = " ".join([target.title, target.h1, url_text]).strip()
+    subject_terms = anchor_subject_terms or (_stems(fallback_seed) - boilerplate_terms)
+    if not subject_terms:
+        subject_terms = _stems(anchor)
+    seed = " ".join(sorted(subject_terms))
+
+    headings = _unique_text(target.headings)
+    paragraphs = _unique_text(target.paragraphs)
+
+    def is_topical(value: str) -> bool:
+        return bool(_stems(value) & subject_terms)
+
+    ranked_headings = sorted(
+        (
+            (similarity(value, seed), index, value)
+            for index, value in enumerate(headings)
+            if len(value.split()) >= 3 and is_topical(value)
+        ),
+        key=lambda item: (-item[0], item[1]),
+    )
+    ranked_paragraphs = sorted(
+        (
+            (similarity(value, seed), index, value)
+            for index, value in enumerate(paragraphs)
+            if len(value.split()) >= 8 and is_topical(value)
+        ),
+        key=lambda item: (-item[0], item[1]),
+    )
+
+    selected_headings = [value for _, _, value in ranked_headings[:8]]
+    selected_paragraphs = [value for _, _, value in ranked_paragraphs[:12]]
+    topic_blocks = selected_paragraphs or selected_headings
+
+    primary = [target.title]
+    if is_topical(target.h1):
+        primary.append(target.h1)
+    profile_parts = _unique_text([*primary, url_text, *selected_headings, *selected_paragraphs])
+    return " ".join(profile_parts), topic_blocks
 
 
 _TARGET_TYPE_SIGNALS: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -563,25 +650,38 @@ def _stems(text: str) -> set[str]:
     return {_stem(term) for term in tokens(text)}
 
 
-def _destination_intent_score(paragraph: str, target: PageEvidence, anchor: str) -> float:
-    """Measure fit to destination-specific intent, not just the requested anchor."""
-    core_profile = " ".join([target.title, target.h1]).strip()
-    if not core_profile:
-        core_profile = " ".join(target.headings[:8]).strip()
-    if not core_profile:
-        return similarity(paragraph, target.text[:4000])
+def _destination_intent_score(
+    paragraph: str,
+    target: PageEvidence,
+    anchor: str,
+    topic_profile: str,
+    topic_blocks: list[str],
+) -> float:
+    """Measure topical fit separately from the destination page's purpose."""
+    profile_score = similarity(paragraph, topic_profile) if topic_profile else 0.0
+    block_score = max((similarity(paragraph, block) for block in topic_blocks), default=0.0)
+    topic_score = (0.70 * block_score) + (0.30 * profile_score)
 
+    intent = _target_intent(target)
+    if intent not in {"cost", "implementation", "governance"}:
+        # Learning, guide, service, and general resources can support a paragraph that
+        # shares their subject even when the source does not already mention a course,
+        # guide, or service. Generated copy remains subject to editorial review.
+        return round(topic_score, 4)
+
+    signals = next(
+        (values for kind, values in _TARGET_TYPE_SIGNALS if kind == intent),
+        (),
+    )
     paragraph_terms = _stems(paragraph)
-    core_terms = _stems(core_profile)
-    anchor_terms = _stems(anchor)
-
-    # Prefer terms that describe what makes the destination distinct from the anchor.
-    intent_terms = core_terms - anchor_terms
-    if len(intent_terms) < 2:
-        intent_terms = core_terms
-    intent_overlap = len(paragraph_terms & intent_terms) / max(len(intent_terms), 1)
-    semantic = similarity(paragraph, core_profile)
-    return round((0.35 * semantic) + (0.65 * intent_overlap), 4)
+    purpose_hits = sum(bool(paragraph_terms & _stems(value)) for value in signals)
+    if purpose_hits == 0:
+        # Specialized destinations need evidence of their specific purpose. This keeps
+        # generic topical paragraphs from outranking pricing, implementation, or
+        # governance context merely because they repeat the anchor.
+        return round(topic_score * 0.35, 4)
+    purpose_score = min(1.0, purpose_hits / 2.0)
+    return round((0.70 * topic_score) + (0.30 * purpose_score), 4)
 
 
 def _destination_level(score: float) -> str:
@@ -608,15 +708,26 @@ def rank_placements(
         return []
 
     anchor, anchor_warnings = _select_anchor(preferred_anchor, target.title)
-    target_profile = _target_profile(target)
+    target_profile, target_topic_blocks = _target_topic_evidence(target, anchor)
     candidates: list[tuple[float, float, int, str]] = []
 
     for i, paragraph in enumerate(source.paragraphs, start=1):
         wc = len(paragraph.split())
         if wc < 18 or wc > 260:
             continue
+        # A standalone paragraph ending in a colon or semicolon normally introduces
+        # a table or list. Treating it as complete prose produces malformed rewrites
+        # and weak placements immediately before structured content.
+        if paragraph.rstrip().endswith((":", ";")):
+            continue
         semantic_score = similarity(paragraph, target_profile)
-        destination_score = _destination_intent_score(paragraph, target, anchor)
+        destination_score = _destination_intent_score(
+            paragraph,
+            target,
+            anchor,
+            target_profile,
+            target_topic_blocks,
+        )
         anchor_terms = set(tokens(anchor))
         anchor_overlap = len(anchor_terms & set(tokens(paragraph))) / max(len(anchor_terms), 1)
         # Destination intent gets meaningful weight so a pricing/cost paragraph beats a
