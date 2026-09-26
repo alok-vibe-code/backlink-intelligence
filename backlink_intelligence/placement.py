@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 import re
 
 from .fetcher import FetchConfig, fetch_page
@@ -94,17 +95,134 @@ def _fallback_anchor_case(anchor: str) -> str:
     return " ".join(output) if changed else anchor.strip()
 
 
+def _anchor_with_article(anchor: str) -> str:
+    """Return a generated-copy anchor with a conservative indefinite article."""
+    anchor = anchor.strip()
+    if not anchor:
+        return anchor
+    first = anchor.split()[0].casefold().strip(".()[]{}\"'")
+    if first in {"a", "an", "the", "this", "these", "our", "your"}:
+        return anchor
+    # Common initialisms whose spoken form begins with a vowel sound.
+    vowel_initialisms = {"ai", "aeo", "seo", "smb", "mba", "ml", "nlp", "llm", "api"}
+    consonant_vowel_words = ("uni", "use", "user", "euro", "one")
+    article = "an" if first in vowel_initialisms or first[:1] in "aeiou" else "a"
+    if first.startswith(consonant_vowel_words):
+        article = "a"
+    return f"{article} {anchor}"
+
+
+def _target_profile(target: PageEvidence) -> str:
+    return " ".join([target.title, target.h1, *target.headings, target.text[:12000]])
+
+
+def _target_intent(target: PageEvidence) -> str:
+    profile = _target_profile(target).casefold()
+    if any(term in profile for term in ("cost", "pricing", "price", "tco", "roi")):
+        return "cost"
+    if any(term in profile for term in ("course", "learning", "training", "curriculum", "roadmap", "guide")):
+        return "learning"
+    if any(term in profile for term in ("implementation", "service", "consulting", "solution")):
+        return "implementation"
+    if any(term in profile for term in ("risk", "governance", "compliance", "security")):
+        return "governance"
+    return "general"
+
+
+def _context_kind(text: str) -> str:
+    lower = text.casefold()
+    groups = (
+        ("application", ("application", "use case", "workflow", "agent", "automation", "transaction", "accounting", "operation")),
+        ("skills", ("skill", "career", "professional", "learn", "training", "education", "knowledge")),
+        ("implementation", ("implement", "integrat", "deploy", "build", "system", "architecture", "infrastructure")),
+        ("cost", ("cost", "price", "pricing", "budget", "expense", "roi", "investment")),
+        ("governance", ("risk", "governance", "compliance", "security", "privacy", "audit")),
+    )
+    for kind, markers in groups:
+        if any(marker in lower for marker in markers):
+            return kind
+    return "general"
+
+
+def _sentence_spans(paragraph: str) -> list[tuple[int, int, str]]:
+    """Split prose conservatively while retaining exact offsets and punctuation."""
+    boundaries = list(re.finditer(r"(?<=[.!?])\s+(?=[A-Z0-9\"'\u201c\u2018])", paragraph))
+    starts = [0, *(match.end() for match in boundaries)]
+    ends = [*(match.start() for match in boundaries), len(paragraph)]
+    return [(start, end, paragraph[start:end]) for start, end in zip(starts, ends) if paragraph[start:end].strip()]
+
+
+def _meaningful_overlap(sentence: str, target: PageEvidence, anchor: str) -> int:
+    sentence_terms = _stems(sentence)
+    target_terms = _stems(_target_profile(target))
+    anchor_terms = _stems(anchor)
+    return len(sentence_terms & (target_terms - anchor_terms))
+
+
+def _rewrite_candidate(
+    paragraph: str,
+    anchor: str,
+    target_url: str,
+    target: PageEvidence,
+) -> tuple[str, str, list[TextSegment], str, list[str]] | None:
+    """Integrate an anchor into one supported sentence without replacing source words."""
+    if _target_intent(target) != "learning":
+        return None
+
+    ranked: list[tuple[int, float, int, int, str]] = []
+    for start, end, sentence in _sentence_spans(paragraph):
+        overlap = _meaningful_overlap(sentence, target, anchor)
+        kind = _context_kind(sentence)
+        if overlap < 2 or kind not in {"application", "skills", "implementation"}:
+            continue
+        ranked.append((overlap, similarity(sentence, _target_profile(target)), start, end, kind))
+    if not ranked:
+        return None
+
+    _, _, start, end, kind = max(ranked, key=lambda item: (item[0], item[1], -item[2]))
+    sentence = paragraph[start:end]
+    stripped = sentence.rstrip()
+    terminal = stripped[-1] if stripped and stripped[-1] in ".!?" else "."
+    sentence_body = stripped[:-1] if stripped and stripped[-1] in ".!?" else stripped
+
+    placed_anchor = _fallback_anchor_case(anchor)
+    linked_phrase = _anchor_with_article(placed_anchor)
+    anchor_offset = linked_phrase.rfind(placed_anchor)
+    article_prefix = linked_phrase[:anchor_offset]
+    if kind == "application":
+        clause = ", one of the practical applications professionals can examine more deeply through "
+    elif kind == "skills":
+        clause = ", a topic professionals can study more deeply through "
+    else:
+        clause = ", an approach teams can explore further through "
+
+    prefix = paragraph[:start] + sentence_body + clause + article_prefix
+    suffix = terminal + sentence[len(stripped) :] + paragraph[end:]
+    after_text = prefix + placed_anchor + suffix
+    after = prefix + f"[{placed_anchor}]({target_url})" + suffix
+    notes = [
+        "source_sentence_lightly_rewritten",
+        "publisher_meaning_preserved",
+        "target_title_not_injected_into_source_copy",
+        "destination_intent_used_for_contextual_sentence",
+    ]
+    if placed_anchor != anchor:
+        notes.append("anchor_casing_adapted_for_generated_sentence")
+    return after, after_text, _segments(prefix, placed_anchor, target_url, suffix), placed_anchor, notes
+
+
 def _contextual_fallback_sentence(
     paragraph: str,
     anchor: str,
-    target_title: str,
+    target: PageEvidence,
 ) -> tuple[str, str, str, list[str]]:
     """Create concise deterministic fallback copy without dumping the target title."""
     placed_anchor = _fallback_anchor_case(anchor)
-    target_lower = target_title.lower()
+    intent = _target_intent(target)
+    context = _context_kind(paragraph)
     paragraph_lower = paragraph.lower()
 
-    cost_intent = any(term in target_lower for term in ("cost", "pricing", "price", "tco", "roi"))
+    cost_intent = intent == "cost"
     cost_context = any(term in paragraph_lower for term in ("cost", "price", "pricing", "budget", "expense", "roi", "investment", "expensive"))
 
     notes: list[str] = ["target_title_not_injected_into_source_copy"]
@@ -129,17 +247,52 @@ def _contextual_fallback_sentence(
             notes,
         )
 
-    if any(term in target_lower for term in ("roadmap", "learning", "course", "guide")):
+    anchor_phrase = _anchor_with_article(placed_anchor)
+    anchor_offset = anchor_phrase.rfind(placed_anchor)
+    article_prefix = anchor_phrase[:anchor_offset]
+    if intent == "learning" and context == "application":
         return (
-            "Readers who want a structured next step can explore this ",
-            " for more detail.",
+            f"Professionals interested in understanding these applications more deeply can also explore {article_prefix}",
+            ".",
+            placed_anchor,
+            notes,
+        )
+
+    if intent == "learning" and context == "skills":
+        return (
+            f"Professionals looking to develop these skills can explore {article_prefix}",
+            ".",
+            placed_anchor,
+            notes,
+        )
+
+    if intent == "learning":
+        return (
+            f"Teams applying these ideas can use {article_prefix}",
+            " as a structured next step.",
+            placed_anchor,
+            notes,
+        )
+
+    if intent == "implementation":
+        return (
+            "Teams evaluating similar approaches can explore ",
+            " for practical implementation guidance.",
+            placed_anchor,
+            notes,
+        )
+
+    if intent == "governance":
+        return (
+            "Teams assessing the related safeguards can consult ",
+            " for additional governance context.",
             placed_anchor,
             notes,
         )
 
     return (
-        "Readers who want additional context can review this ",
-        " resource.",
+        "For teams evaluating similar approaches, ",
+        " offers a useful point of reference.",
         placed_anchor,
         notes,
     )
@@ -159,7 +312,7 @@ def _compose_after(
     paragraph: str,
     anchor: str,
     target_url: str,
-    target_title: str,
+    target: PageEvidence,
 ) -> tuple[str, str, str, list[TextSegment], str, list[str]]:
     """Compose the draft while preserving source grammar/capitalization when possible."""
     exact = _find_complete_phrase(paragraph, anchor)
@@ -197,8 +350,13 @@ def _compose_after(
                 ["anchor_adapted_to_source_grammar", "requested_anchor_not_used_verbatim"],
             )
 
+    rewrite = _rewrite_candidate(paragraph, anchor, target_url, target)
+    if rewrite is not None:
+        after, after_text, segments, placed_anchor, notes = rewrite
+        return "contextual_sentence", after, after_text, segments, placed_anchor, notes
+
     sentence_prefix, sentence_suffix, placed_anchor, notes = _contextual_fallback_sentence(
-        paragraph, anchor, target_title
+        paragraph, anchor, target
     )
     prefix = paragraph.rstrip() + " " + sentence_prefix
     after_text = prefix + placed_anchor + sentence_suffix
@@ -211,6 +369,16 @@ def _compose_after(
         placed_anchor,
         notes,
     )
+
+
+def _preservation_percent(before: str, after: str) -> float:
+    """Calculate how many original word tokens remain in the recommended text."""
+    before_words = re.findall(r"\w+(?:[+#-]\w+)*", before.casefold(), flags=re.UNICODE)
+    after_words = re.findall(r"\w+(?:[+#-]\w+)*", after.casefold(), flags=re.UNICODE)
+    if not before_words:
+        return 100.0
+    retained = sum((Counter(before_words) & Counter(after_words)).values())
+    return round(min(100.0, 100.0 * retained / len(before_words)), 1)
 
 
 def _stem(term: str) -> str:
@@ -276,7 +444,7 @@ def rank_placements(
         return []
 
     anchor, anchor_warnings = _select_anchor(preferred_anchor, target.title)
-    target_profile = " ".join([target.title, target.h1, *target.headings, target.text[:12000]])
+    target_profile = _target_profile(target)
     candidates: list[tuple[float, float, int, str]] = []
 
     for i, paragraph in enumerate(source.paragraphs, start=1):
@@ -297,17 +465,18 @@ def rank_placements(
     suggestions: list[PlacementSuggestion] = []
     for rank, (score, destination_score, index, paragraph) in enumerate(candidates[: max(top_n, 1)], start=1):
         strategy, after, after_text, after_segments, placed_anchor, compose_notes = _compose_after(
-            paragraph, anchor, target_url, target.title
+            paragraph, anchor, target_url, target
         )
         original_words = max(len(paragraph.split()), 1)
         after_words = len(after_text.split())
         added = max(after_words - original_words, 0)
-        preservation = 100.0 if strategy in {"minimal_insertion", "contextual_sentence"} else 90.0
+        preservation = _preservation_percent(paragraph, after_text)
         warnings = list(anchor_warnings)
         reasons = ["paragraph_has_strong_target_similarity"] if score >= 0.25 else ["best_available_context_match"]
+        is_rewrite = "source_sentence_lightly_rewritten" in compose_notes
         if strategy == "minimal_insertion":
             reasons.append("anchor_already_present_in_original_copy")
-        else:
+        elif not is_rewrite:
             reasons.append("publisher_copy_preserved")
         for note in compose_notes:
             if note == "requested_anchor_not_used_verbatim":
@@ -318,6 +487,8 @@ def rank_placements(
             reasons.append("strong_destination_intent_alignment")
         context_level = "very_high" if score >= 0.48 else "high" if score >= 0.30 else "medium" if score >= 0.15 else "low"
         intervention = _intervention(preservation, added)
+        if is_rewrite and intervention == "low":
+            intervention = "medium"
         near_threshold = (
             score < min_context_score + 0.05
             or destination_score < min_destination_score + 0.03

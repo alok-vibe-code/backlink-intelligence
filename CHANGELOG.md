@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.1 - 2026-09-26
+
+- Add deterministic one-sentence anchor integration when a supported exact anchor is absent.
+- Generate context-specific fallback sentences instead of repeating a generic resource phrase.
+- Calculate original-text preservation from retained source words and require editorial review for generated copy.
+- Preserve the existing v1 API contract, strategy values, thresholds, and rate limits.
+
 ## 1.1.0 - 2026-08-30
 
 - Add the shared placement analysis service and FastAPI v1 interface.
