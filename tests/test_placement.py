@@ -230,8 +230,8 @@ class PlacementTests(unittest.TestCase):
         item = rank_placements(source, target, "ai in finance course", "https://t.com/course", top_n=1)[0]
 
         expected = (
-            "Financial Agents now perform Continuous Accounting, a practical application "
-            "that can be examined more deeply through an ai in finance course. "
+            "Financial Agents now perform Continuous Accounting, an application "
+            "examined in greater depth through an ai in finance course. "
             "Instead of waiting for month-end, agents monitor every transaction in real time across global entities."
         )
         self.assertEqual(item.after_text, expected)
@@ -259,10 +259,8 @@ class PlacementTests(unittest.TestCase):
         self.assertIn("FinanceCo", item.after_text)
         self.assertIn('"continuous accounting"', item.after_text)
         self.assertIn("14 entities", item.after_text)
-        self.assertEqual(
-            item.after_text.count("a practical application that can be examined more deeply"),
-            1,
-        )
+        self.assertNotIn("a practical application", item.after_text.casefold())
+        self.assertEqual(len([segment for segment in item.after_segments if segment.type == "link"]), 1)
         self.assertGreaterEqual(item.preservation_percent, 99.0)
 
     def test_unsupported_learning_relationship_uses_context_specific_append(self):
@@ -280,8 +278,8 @@ class PlacementTests(unittest.TestCase):
         self.assertTrue(item.after_text.startswith(source.paragraphs[0]))
         self.assertNotIn("source_sentence_lightly_rewritten", item.reasons)
         self.assertNotIn("Readers who want additional context", item.after_text)
-        self.assertIn("Finance professionals can examine", item.after_text)
-        self.assertIn("target_audience_used_for_contextual_sentence", item.reasons)
+        self.assertNotIn("finance professionals", item.after_text.casefold())
+        self.assertIn("neutral_audience_wording_used", item.reasons)
         self.assertEqual(item.preservation_percent, 100.0)
 
     def test_segments_reconstruct_rewrite_and_contain_one_safe_link(self):
@@ -331,9 +329,10 @@ class PlacementTests(unittest.TestCase):
         )
         item = rank_placements(source, target, "ai in finance course", "https://t.com", top_n=1)[0]
         self.assertNotIn(" ,", item.after_text)
-        self.assertIn("operations, a practical application", item.after_text)
+        self.assertIn("ai in finance course", item.after_text)
+        self.assertNotIn("a practical application", item.after_text.casefold())
 
-    def test_learning_rewrite_uses_explicit_student_audience(self):
+    def test_learning_rewrite_does_not_inject_target_audience_into_source(self):
         source = parse_page(
             """<main><p>Financial agents support continuous accounting and transaction monitoring across connected business systems, regional teams, and carefully governed reporting workflows.</p></main>""",
             requested_url="https://s.com", final_url="https://s.com", status_code=200,
@@ -344,27 +343,31 @@ class PlacementTests(unittest.TestCase):
         )
         item = rank_placements(source, target, "ai in finance course", "https://t.com/course", top_n=1)[0]
 
-        self.assertIn("a practical application students can examine more deeply", item.after_text)
+        self.assertNotIn("students", item.after_text.casefold())
         self.assertNotIn("professionals", item.after_text.casefold())
-        self.assertIn("target_audience_used_for_contextual_sentence", item.reasons)
+        self.assertIn("neutral_audience_wording_used", item.reasons)
 
-    def test_learning_rewrite_uses_other_explicit_target_audiences(self):
+    def test_learning_rewrite_uses_audience_only_when_source_also_addresses_it(self):
         source = parse_page(
             """<main><p>Financial agents support continuous accounting and transaction monitoring across connected business systems, regional teams, and carefully governed reporting workflows.</p></main>""",
             requested_url="https://s.com", final_url="https://s.com", status_code=200,
         )
-        for audience, expected in (
-            ("Developers", "developers can examine"),
-            ("Marketers", "marketers can examine"),
-            ("Executives", "executives can examine"),
+        for audience in (
+            "Developers",
+            "Marketers",
+            "Executives",
         ):
             with self.subTest(audience=audience):
+                source = parse_page(
+                    f"""<main><p>{audience} can use financial agents for continuous accounting, transaction monitoring, connected business systems, and carefully governed reporting workflows.</p></main>""",
+                    requested_url="https://s.com", final_url="https://s.com", status_code=200,
+                )
                 target = parse_page(
                     f"""<title>AI in Finance Course for {audience}</title><h1>Finance AI Applications</h1><p>Study financial agents, continuous accounting, and transaction monitoring.</p>""",
                     requested_url="https://t.com/course", final_url="https://t.com/course", status_code=200,
                 )
                 item = rank_placements(source, target, "ai in finance course", "https://t.com/course", top_n=1)[0]
-                self.assertIn(expected, item.after_text)
+                self.assertIn(f"{audience.casefold()} can explore further", item.after_text.casefold())
                 self.assertIn("target_audience_used_for_contextual_sentence", item.reasons)
 
     def test_learning_rewrite_uses_neutral_wording_without_explicit_audience(self):
@@ -378,7 +381,8 @@ class PlacementTests(unittest.TestCase):
         )
         item = rank_placements(source, target, "ai in finance course", "https://t.com/course", top_n=1)[0]
 
-        self.assertIn("a practical application that can be examined more deeply", item.after_text)
+        self.assertIn("ai in finance course", item.after_text)
+        self.assertNotIn("a practical application", item.after_text.casefold())
         self.assertNotIn("professionals", item.after_text.casefold())
         self.assertIn("neutral_audience_wording_used", item.reasons)
 
@@ -393,7 +397,8 @@ class PlacementTests(unittest.TestCase):
         )
         item = rank_placements(source, target, "ai in finance course", "https://t.com/course", top_n=1)[0]
 
-        self.assertIn("a practical application that can be examined more deeply", item.after_text)
+        self.assertIn("ai in finance course", item.after_text)
+        self.assertNotIn("a practical application", item.after_text.casefold())
         self.assertNotIn("professionals can", item.after_text.casefold())
         self.assertIn("neutral_audience_wording_used", item.reasons)
 
@@ -423,7 +428,7 @@ class PlacementTests(unittest.TestCase):
         )
         item = rank_placements(source, target, "workflow automation platform", "https://t.com/products/workflow-automation", top_n=1)[0]
 
-        self.assertIn("an approach that can be explored further", item.after_text)
+        self.assertIn("implementation guidance for similar approaches", item.after_text)
         self.assertNotIn("professionals", item.after_text.casefold())
         self.assertNotIn("course", item.after_text.casefold())
 
@@ -453,8 +458,42 @@ class PlacementTests(unittest.TestCase):
         )
         item = rank_placements(source, target, "finance AI education", "https://t.com/education/course/finance-ai", top_n=1)[0]
 
-        self.assertIn("a practical application that can be examined more deeply", item.after_text)
+        self.assertIn("finance AI education", item.after_text)
+        self.assertNotIn("a practical application", item.after_text.casefold())
         self.assertNotIn("professionals", item.after_text.casefold())
+
+    def test_ranked_learning_suggestions_are_contextual_and_not_boilerplate(self):
+        source = parse_page(
+            """<main>
+            <p>AI agents need more than access to a large company database. The API should make business information easy to retrieve, interpret, and use within automated workflows, while providing enough flexibility for different research, monitoring, and decision-making tasks.</p>
+            <p>A company data API is an interface that lets AI agents access structured business information such as firmographics, workforce data, funding, technologies, and company growth signals. Agents can use this data for research, enrichment, monitoring, scoring, and automated decision-making.</p>
+            <p>Choosing the right company data API for an AI agent requires more than comparing database size or the number of available fields. The API should provide reliable data in a format that is easy for an agent to retrieve, interpret, and use within automated workflows. Below, you can find five actionable steps for selecting a company data API for AI agents.</p>
+            </main>""",
+            requested_url="https://source.example/company-data-apis",
+            final_url="https://source.example/company-data-apis",
+            status_code=200,
+        )
+        target = parse_page(
+            """<title>Agentic AI Course for Working Professionals</title><main>
+            <h1>Certificate in Agentic AI</h1>
+            <p>Learn to build autonomous AI agents using structured data, external tools, memory, orchestration, and automated workflows.</p>
+            </main>""",
+            requested_url="https://target.example/agentic-ai-course",
+            final_url="https://target.example/agentic-ai-course",
+            status_code=200,
+        )
+
+        items = rank_placements(source, target, "AI agent course", target.final_url, top_n=3)
+        self.assertEqual(len(items), 3)
+        generated_sentences = [item.after_text[len(item.before):].strip() for item in items]
+        self.assertEqual(len(set(generated_sentences)), 3)
+        for item in items:
+            lower = item.after_text.casefold()
+            self.assertNotIn("a practical application", lower)
+            self.assertNotIn("working professionals", lower)
+            self.assertNotIn("course resource", lower)
+            self.assertTrue(item.review_required)
+            self.assertEqual("".join(segment.text for segment in item.after_segments), item.after_text)
 
 
 
