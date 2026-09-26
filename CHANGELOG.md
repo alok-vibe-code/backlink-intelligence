@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.2 - 2026-09-26
+
+- Classify destination pages using on-page evidence with the final URL as a supporting signal.
+- Use audience-specific wording only when the destination explicitly identifies that audience.
+- Use neutral contextual wording when the destination audience is not established.
+- Separate courses and training from guides, articles, services, pricing, implementation, and governance resources.
+- Preserve the existing v1 API contract, WordPress integration, thresholds, and rate limits.
+
 ## 1.1.1 - 2026-09-26
 
 - Add deterministic one-sentence anchor integration when a supported exact anchor is absent.
