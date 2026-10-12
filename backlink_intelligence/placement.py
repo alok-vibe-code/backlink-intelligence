@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from collections import Counter
 import re
+import unicodedata
 from urllib.parse import unquote, urlsplit
 
 from .fetcher import FetchConfig, fetch_page
 from .models import PageEvidence, PlacementSuggestion, TextSegment
-from .relevance import similarity, tokens
+from .relevance import normalize_text, similarity, tokens
 
 
 def _intervention(preservation: float, added_words: int) -> str:
@@ -44,18 +45,42 @@ def _select_anchor(preferred: str, target_title: str) -> tuple[str, list[str]]:
 
 
 def _find_complete_phrase(text: str, phrase: str) -> re.Match[str] | None:
-    """Find a phrase only when it is not embedded inside a larger word form."""
-    phrase = phrase.strip()
+    """Find a complete Vietnamese NFC-equivalent phrase, preserving source spans."""
+    phrase = unicodedata.normalize("NFC", phrase.strip())
     if not phrase:
         return None
-    pattern = re.compile(rf"(?<!\w){re.escape(phrase)}(?!\w)", re.IGNORECASE)
-    return pattern.search(text)
+    pattern = re.compile(rf"(?<![\w\u0300-\u036f]){re.escape(phrase)}(?![\w\u0300-\u036f])", re.IGNORECASE)
+    normalized = unicodedata.normalize("NFC", text)
+    if normalized == text:
+        return pattern.search(text)
+
+    # Group a starter with its combining marks so normalization cannot shift the
+    # insertion into the middle of a Vietnamese letter. Return an actual match
+    # against the original string: callers use its offsets to preserve the copy.
+    clusters: list[tuple[int, int]] = []
+    for index, character in enumerate(text):
+        if clusters and unicodedata.category(character).startswith("M"):
+            clusters[-1] = (clusters[-1][0], index + 1)
+        else:
+            clusters.append((index, index + 1))
+    normalized_parts: list[str] = []
+    spans: list[tuple[int, int]] = []
+    for start, end in clusters:
+        part = unicodedata.normalize("NFC", text[start:end])
+        normalized_parts.append(part)
+        spans.extend([(start, end)] * len(part))
+    normalized = "".join(normalized_parts)
+    found = pattern.search(normalized)
+    if found is None:
+        return None
+    start, end = spans[found.start()][0], spans[found.end() - 1][1]
+    return re.compile(re.escape(text[start:end])).match(text, start, end)
 
 
 def _simple_anchor_variants(anchor: str) -> list[str]:
     """Return conservative singular/plural variants for the final anchor word."""
     anchor = anchor.strip()
-    if not anchor or " " not in anchor:
+    if not anchor or " " not in anchor or not anchor.isascii():
         return []
     prefix, last = anchor.rsplit(" ", 1)
     if not last.isalpha():
@@ -754,8 +779,8 @@ def _compose_after(
 
 def _preservation_percent(before: str, after: str) -> float:
     """Calculate how many original word tokens remain in the recommended text."""
-    before_words = re.findall(r"\w+(?:[+#-]\w+)*", before.casefold(), flags=re.UNICODE)
-    after_words = re.findall(r"\w+(?:[+#-]\w+)*", after.casefold(), flags=re.UNICODE)
+    before_words = re.findall(r"\w+(?:[+#-]\w+)*", normalize_text(before), flags=re.UNICODE)
+    after_words = re.findall(r"\w+(?:[+#-]\w+)*", normalize_text(after), flags=re.UNICODE)
     if not before_words:
         return 100.0
     retained = sum((Counter(before_words) & Counter(after_words)).values())
@@ -764,7 +789,10 @@ def _preservation_percent(before: str, after: str) -> float:
 
 def _stem(term: str) -> str:
     """Small deterministic normalizer used only for destination-intent comparison."""
-    term = term.lower().strip(".-")
+    term = normalize_text(term).strip(".-")
+    # These suffix rules describe English, not Vietnamese or product codes.
+    if not term.isascii() or not term.isalpha():
+        return term
     if len(term) > 5 and term.endswith("ies"):
         return term[:-3] + "y"
     if len(term) > 5 and term.endswith("ing"):

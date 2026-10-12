@@ -1,17 +1,56 @@
 from __future__ import annotations
 
 import math
-import re
+import unicodedata
 from collections import Counter
 
 from .models import PageEvidence, RelevanceEvidence
 
-_TOKEN = re.compile(r"[a-z0-9][a-z0-9+#.-]{1,}", re.I)
-_STOP = {"a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "has", "have", "how", "in", "into", "is", "it", "its", "of", "on", "or", "that", "the", "their", "this", "to", "was", "we", "what", "when", "where", "which", "with", "you", "your", "can", "will", "more"}
+_STOP_ENGLISH = {"a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "has", "have", "how", "in", "into", "is", "it", "its", "of", "on", "or", "that", "the", "their", "this", "to", "was", "we", "what", "when", "where", "which", "with", "you", "your", "can", "will", "more"}
+# Keep the list conservative: product nouns, negation ("không", "chưa") and
+# meaningful short syllables ("ổ", "ý") must still contribute to topical evidence.
+_STOP_VIETNAMESE = {
+    "bởi", "các", "cho", "của", "cũng", "đã", "đang", "đây", "để", "đó",
+    "được", "khi", "là", "mà", "một", "này", "những", "rằng", "sẽ", "tại",
+    "thì", "trong", "từ", "và", "vẫn", "về", "với",
+}
+_STOP = _STOP_ENGLISH | _STOP_VIETNAMESE
+
+
+def normalize_text(text: str) -> str:
+    """Normalize spelling/case for comparison without removing Vietnamese tones."""
+    return unicodedata.normalize("NFC", (text or "").casefold())
 
 
 def tokens(text: str) -> list[str]:
-    return [t.lower().strip(".-") for t in _TOKEN.findall(text or "") if t.lower().strip(".-") not in _STOP]
+    """Extract Unicode terms, retaining technical identifiers such as C++/KV-48.
+
+    NFC makes composed and decomposed Vietnamese equivalent. Combining marks
+    remain attached to their word even when a Unicode script has no NFC form.
+    Single ASCII letters retain the upstream exclusion; a Vietnamese syllable
+    such as "ổ" is a complete word and is kept. Underscores remain separators.
+    """
+    result: list[str] = []
+    current: list[str] = []
+
+    def finish() -> None:
+        if not current:
+            return
+        raw = "".join(current)
+        token = raw.strip(".-")
+        if token and (len(raw) > 1 or not raw.isascii()) and token not in _STOP:
+            result.append(token)
+        current.clear()
+
+    for character in normalize_text(text):
+        if character.isalnum():
+            current.append(character)
+        elif current and (unicodedata.category(character).startswith("M") or character in "+#.-"):
+            current.append(character)
+        else:
+            finish()
+    finish()
+    return result
 
 
 def _cosine(a: str, b: str) -> float:
